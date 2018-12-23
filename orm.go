@@ -1,4 +1,4 @@
-package main
+package main // import "bou.ke/orm"
 
 import (
 	"github.com/gobuffalo/flect"
