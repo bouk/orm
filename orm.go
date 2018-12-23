@@ -9,10 +9,26 @@ type Input struct {
 	Package string
 }
 
+type TableName string
+
+func (t TableName) Singular() string {
+	return flect.Singularize(string(t))
+}
+
+func (t TableName) StructName() string {
+	return flect.New(string(t)).Singularize().Pascalize().String()
+}
+
+func (t TableName) RelationName() string {
+	return flect.Pascalize(string(t))
+}
+
 type Tables []Table
 type Table struct {
-	Name    string   `json:"name"`
-	Columns []Column `json:"columns"`
+	Name      string      `json:"name"`
+	Columns   []Column    `json:"columns"`
+	BelongsTo []TableName `json:"belongs_to"`
+	HasMany   []TableName `json:"has_many"`
 }
 
 func (t *Table) Singular() string {

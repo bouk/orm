@@ -19,6 +19,10 @@ type User struct {
 	LastName string
 }
 
+func (o *User) Posts() PostRelation {
+	return Posts().Where("user_id", o.ID)
+}
+
 func (o *User) fieldPointerForColumn(column string) interface{} {
 	switch column {
 	case "id":
@@ -239,6 +243,10 @@ type Post struct {
 
 	// Body ...
 	Body string
+}
+
+func (o *Post) User(ctx context.Context) (*User, error) {
+	return Users().Find(ctx, o.UserID)
 }
 
 func (o *Post) fieldPointerForColumn(column string) interface{} {

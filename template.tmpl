@@ -13,6 +13,16 @@ type {{.StructName}} struct { {{range .Columns}}
 	{{.FieldName}} {{.Type}}
 {{end}}
 }
+{{$table := .}}{{range .HasMany}}
+func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
+	return {{.RelationName}}().Where("{{$table.Singular}}_id", o.ID)
+}
+{{end}}
+{{$table := .}}{{range .BelongsTo}}
+func (o *{{$table.StructName}}) {{.StructName}}(ctx context.Context) (*{{.StructName}}, error) {
+	return {{.RelationName}}().Find(ctx, o.{{.StructName}}ID)
+}
+{{end}}
 
 func (o *{{.StructName}}) fieldPointerForColumn(column string) interface{} {
 	switch column { {{range .Columns}}

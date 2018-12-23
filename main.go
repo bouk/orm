@@ -26,6 +26,7 @@ func main() {
 					Type: "string",
 				},
 			},
+			HasMany: []TableName{"posts"},
 		},
 		{
 			Name: "posts",
@@ -43,6 +44,7 @@ func main() {
 					Type: "string",
 				},
 			},
+			BelongsTo: []TableName{"users"},
 		},
 	}
 
