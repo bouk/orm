@@ -10,17 +10,134 @@ import (
 
 type User struct {
 	// ID ...
-	ID uint64
+	ID int64
 
 	// FirstName ...
 	FirstName string
 
 	// LastName ...
 	LastName string
+
+	orm struct {
+		// If true, then this record exists in the DB
+		existingRecord bool
+		deleted        bool
+
+		old struct {
+			// ID ...
+			ID int64
+
+			// FirstName ...
+			FirstName string
+
+			// LastName ...
+			LastName string
+		}
+	}
 }
 
 func (o *User) Posts() PostRelation {
 	return Posts().Where("user_id", o.ID)
+}
+
+func (o *User) Save(ctx context.Context) error {
+	if o.orm.deleted {
+		return fmt.Errorf("record deleted")
+	}
+
+	db := getDB(ctx)
+	if o.orm.existingRecord {
+		stmt := &rel.UpdateStatement{
+			Table: "users",
+			Wheres: []rel.Expr{
+				&rel.Equality{
+					Field: "id",
+					Expr:  &rel.BindParam{Value: o.orm.old.ID},
+				},
+			},
+		}
+
+		if o.ID != o.orm.old.ID {
+			stmt.Values = append(stmt.Values, &rel.Assignment{
+				Column: "id",
+				Value: &rel.BindParam{
+					Value: o.ID,
+				},
+			})
+		}
+
+		if o.FirstName != o.orm.old.FirstName {
+			stmt.Values = append(stmt.Values, &rel.Assignment{
+				Column: "first_name",
+				Value: &rel.BindParam{
+					Value: o.FirstName,
+				},
+			})
+		}
+
+		if o.LastName != o.orm.old.LastName {
+			stmt.Values = append(stmt.Values, &rel.Assignment{
+				Column: "last_name",
+				Value: &rel.BindParam{
+					Value: o.LastName,
+				},
+			})
+		}
+
+		query, values := stmt.Build()
+		_, err := db.ExecContext(ctx, query, values...)
+		if err != nil {
+			return err
+		}
+	} else {
+		stmt := &rel.InsertStatement{
+			Table: "users",
+		}
+
+		if o.ID != 0 {
+			stmt.Columns = append(stmt.Columns, "id")
+			stmt.Values = append(stmt.Values, &rel.BindParam{
+				Value: o.ID,
+			})
+		}
+		stmt.Columns = append(stmt.Columns, "first_name")
+		stmt.Values = append(stmt.Values, &rel.BindParam{
+			Value: o.FirstName,
+		})
+		stmt.Columns = append(stmt.Columns, "last_name")
+		stmt.Values = append(stmt.Values, &rel.BindParam{
+			Value: o.LastName,
+		})
+
+		query, values := stmt.Build()
+		res, err := db.ExecContext(ctx, query, values...)
+		if err != nil {
+			return err
+		}
+		o.orm.existingRecord = true
+
+		if o.ID == 0 {
+			o.ID, err = res.LastInsertId()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	o.orm.old.ID = o.ID
+	o.orm.old.FirstName = o.FirstName
+	o.orm.old.LastName = o.LastName
+
+	return nil
+}
+
+func (o *User) Delete(ctx context.Context) error {
+	_, err := Users().Where("id", o.ID).DeleteAll(ctx)
+	if err != nil {
+		return err
+	}
+	o.orm.deleted = true
+	return err
 }
 
 func (o *User) fieldPointerForColumn(column string) interface{} {
@@ -50,20 +167,18 @@ func (o *User) pointersForFields(fields []string) ([]interface{}, error) {
 
 type UserRelation interface {
 	All(ctx context.Context) ([]*User, error)
-	Count(ctx context.Context) (uint64, error)
-	Find(ctx context.Context, id uint64) (*User, error)
+	Count(ctx context.Context) (int64, error)
+	DeleteAll(ctx context.Context) (int64, error)
+	Find(ctx context.Context, id int64) (*User, error)
 	FindBy(ctx context.Context, query string, args ...interface{}) (*User, error)
 	First(ctx context.Context) (*User, error)
 	Last(ctx context.Context) (*User, error)
-	Limit(limit uint64) UserRelation
-	Offset(offset uint64) UserRelation
+	Limit(limit int64) UserRelation
+	Offset(offset int64) UserRelation
 	Order(query string, args ...string) UserRelation
 	Select(fields ...string) UserRelation
 	Take(ctx context.Context) (*User, error)
 	Where(query string, args ...interface{}) UserRelation
-
-	queryRow(ctx context.Context, fields []string, dest []interface{}) error
-	query(ctx context.Context, fields []string) (*sql.Rows, error)
 }
 
 func Users() UserRelation {
@@ -74,8 +189,8 @@ type userRelation struct {
 	fields      []string
 	whereClause []rel.Expr
 	orderValues []rel.Expr
-	limit       uint64
-	offset      uint64
+	limit       int64
+	offset      int64
 }
 
 func (q *userRelation) buildQuery(fields []string) (query string, args []interface{}) {
@@ -108,10 +223,26 @@ func (q *userRelation) query(ctx context.Context, fields []string) (*sql.Rows, e
 	return db.QueryContext(ctx, query, args)
 }
 
-func (q *userRelation) Count(ctx context.Context) (uint64, error) {
-	var count uint64
+func (q *userRelation) Count(ctx context.Context) (int64, error) {
+	var count int64
 	err := q.queryRow(ctx, []string{"COUNT(*)"}, []interface{}{&count})
 	return count, err
+}
+
+func (q *userRelation) DeleteAll(ctx context.Context) (int64, error) {
+	s := rel.DeleteStatement{
+		Table:  "users",
+		Wheres: q.whereClause,
+	}
+
+	query, args := s.Build()
+
+	db := getDB(ctx)
+	res, err := db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (q *userRelation) Where(query string, args ...interface{}) UserRelation {
@@ -134,7 +265,7 @@ func (q *userRelation) Where(query string, args ...interface{}) UserRelation {
 	return q
 }
 
-func (q *userRelation) Limit(limit uint64) UserRelation {
+func (q *userRelation) Limit(limit int64) UserRelation {
 	q.limit = limit
 	return q
 }
@@ -144,7 +275,7 @@ func (q *userRelation) Select(fields ...string) UserRelation {
 	return q
 }
 
-func (q *userRelation) Offset(offset uint64) UserRelation {
+func (q *userRelation) Offset(offset int64) UserRelation {
 	q.offset = offset
 	return q
 }
@@ -172,6 +303,7 @@ func (q *userRelation) All(ctx context.Context) ([]*User, error) {
 	defer rows.Close()
 
 	row := &User{}
+	row.orm.existingRecord = true
 	ptrs, err := row.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -182,9 +314,14 @@ func (q *userRelation) All(ctx context.Context) ([]*User, error) {
 			return nil, err
 		}
 
-		user := &User{}
-		*user = *row
-		users = append(users, user)
+		o := &User{}
+		*o = *row
+
+		o.orm.old.ID = o.ID
+		o.orm.old.FirstName = o.FirstName
+		o.orm.old.LastName = o.LastName
+
+		users = append(users, o)
 	}
 
 	return users, rows.Err()
@@ -193,18 +330,24 @@ func (q *userRelation) All(ctx context.Context) ([]*User, error) {
 func (q *userRelation) Take(ctx context.Context) (*User, error) {
 	fields := q.columnFields()
 
-	user := &User{}
-	ptrs, err := user.pointersForFields(fields)
+	o := &User{}
+	o.orm.existingRecord = true
+	ptrs, err := o.pointersForFields(fields)
 	if err != nil {
 		return nil, err
 	}
 
-	err = q.Limit(1).queryRow(ctx, fields, ptrs)
+	q.limit = 1
+	err = q.queryRow(ctx, fields, ptrs)
 
-	return user, err
+	o.orm.old.ID = o.ID
+	o.orm.old.FirstName = o.FirstName
+	o.orm.old.LastName = o.LastName
+
+	return o, err
 }
 
-func (q *userRelation) Find(ctx context.Context, id uint64) (*User, error) {
+func (q *userRelation) Find(ctx context.Context, id int64) (*User, error) {
 	return q.FindBy(ctx, "id", id)
 }
 
@@ -236,17 +379,134 @@ func (q *userRelation) Order(query string, args ...string) UserRelation {
 
 type Post struct {
 	// ID ...
-	ID uint64
+	ID int64
 
 	// UserID ...
-	UserID uint64
+	UserID int64
 
 	// Body ...
 	Body string
+
+	orm struct {
+		// If true, then this record exists in the DB
+		existingRecord bool
+		deleted        bool
+
+		old struct {
+			// ID ...
+			ID int64
+
+			// UserID ...
+			UserID int64
+
+			// Body ...
+			Body string
+		}
+	}
 }
 
 func (o *Post) User(ctx context.Context) (*User, error) {
 	return Users().Find(ctx, o.UserID)
+}
+
+func (o *Post) Save(ctx context.Context) error {
+	if o.orm.deleted {
+		return fmt.Errorf("record deleted")
+	}
+
+	db := getDB(ctx)
+	if o.orm.existingRecord {
+		stmt := &rel.UpdateStatement{
+			Table: "users",
+			Wheres: []rel.Expr{
+				&rel.Equality{
+					Field: "id",
+					Expr:  &rel.BindParam{Value: o.orm.old.ID},
+				},
+			},
+		}
+
+		if o.ID != o.orm.old.ID {
+			stmt.Values = append(stmt.Values, &rel.Assignment{
+				Column: "id",
+				Value: &rel.BindParam{
+					Value: o.ID,
+				},
+			})
+		}
+
+		if o.UserID != o.orm.old.UserID {
+			stmt.Values = append(stmt.Values, &rel.Assignment{
+				Column: "user_id",
+				Value: &rel.BindParam{
+					Value: o.UserID,
+				},
+			})
+		}
+
+		if o.Body != o.orm.old.Body {
+			stmt.Values = append(stmt.Values, &rel.Assignment{
+				Column: "body",
+				Value: &rel.BindParam{
+					Value: o.Body,
+				},
+			})
+		}
+
+		query, values := stmt.Build()
+		_, err := db.ExecContext(ctx, query, values...)
+		if err != nil {
+			return err
+		}
+	} else {
+		stmt := &rel.InsertStatement{
+			Table: "users",
+		}
+
+		if o.ID != 0 {
+			stmt.Columns = append(stmt.Columns, "id")
+			stmt.Values = append(stmt.Values, &rel.BindParam{
+				Value: o.ID,
+			})
+		}
+		stmt.Columns = append(stmt.Columns, "user_id")
+		stmt.Values = append(stmt.Values, &rel.BindParam{
+			Value: o.UserID,
+		})
+		stmt.Columns = append(stmt.Columns, "body")
+		stmt.Values = append(stmt.Values, &rel.BindParam{
+			Value: o.Body,
+		})
+
+		query, values := stmt.Build()
+		res, err := db.ExecContext(ctx, query, values...)
+		if err != nil {
+			return err
+		}
+		o.orm.existingRecord = true
+
+		if o.ID == 0 {
+			o.ID, err = res.LastInsertId()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	o.orm.old.ID = o.ID
+	o.orm.old.UserID = o.UserID
+	o.orm.old.Body = o.Body
+
+	return nil
+}
+
+func (o *Post) Delete(ctx context.Context) error {
+	_, err := Posts().Where("id", o.ID).DeleteAll(ctx)
+	if err != nil {
+		return err
+	}
+	o.orm.deleted = true
+	return err
 }
 
 func (o *Post) fieldPointerForColumn(column string) interface{} {
@@ -276,20 +536,18 @@ func (o *Post) pointersForFields(fields []string) ([]interface{}, error) {
 
 type PostRelation interface {
 	All(ctx context.Context) ([]*Post, error)
-	Count(ctx context.Context) (uint64, error)
-	Find(ctx context.Context, id uint64) (*Post, error)
+	Count(ctx context.Context) (int64, error)
+	DeleteAll(ctx context.Context) (int64, error)
+	Find(ctx context.Context, id int64) (*Post, error)
 	FindBy(ctx context.Context, query string, args ...interface{}) (*Post, error)
 	First(ctx context.Context) (*Post, error)
 	Last(ctx context.Context) (*Post, error)
-	Limit(limit uint64) PostRelation
-	Offset(offset uint64) PostRelation
+	Limit(limit int64) PostRelation
+	Offset(offset int64) PostRelation
 	Order(query string, args ...string) PostRelation
 	Select(fields ...string) PostRelation
 	Take(ctx context.Context) (*Post, error)
 	Where(query string, args ...interface{}) PostRelation
-
-	queryRow(ctx context.Context, fields []string, dest []interface{}) error
-	query(ctx context.Context, fields []string) (*sql.Rows, error)
 }
 
 func Posts() PostRelation {
@@ -300,8 +558,8 @@ type postRelation struct {
 	fields      []string
 	whereClause []rel.Expr
 	orderValues []rel.Expr
-	limit       uint64
-	offset      uint64
+	limit       int64
+	offset      int64
 }
 
 func (q *postRelation) buildQuery(fields []string) (query string, args []interface{}) {
@@ -334,10 +592,26 @@ func (q *postRelation) query(ctx context.Context, fields []string) (*sql.Rows, e
 	return db.QueryContext(ctx, query, args)
 }
 
-func (q *postRelation) Count(ctx context.Context) (uint64, error) {
-	var count uint64
+func (q *postRelation) Count(ctx context.Context) (int64, error) {
+	var count int64
 	err := q.queryRow(ctx, []string{"COUNT(*)"}, []interface{}{&count})
 	return count, err
+}
+
+func (q *postRelation) DeleteAll(ctx context.Context) (int64, error) {
+	s := rel.DeleteStatement{
+		Table:  "posts",
+		Wheres: q.whereClause,
+	}
+
+	query, args := s.Build()
+
+	db := getDB(ctx)
+	res, err := db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (q *postRelation) Where(query string, args ...interface{}) PostRelation {
@@ -360,7 +634,7 @@ func (q *postRelation) Where(query string, args ...interface{}) PostRelation {
 	return q
 }
 
-func (q *postRelation) Limit(limit uint64) PostRelation {
+func (q *postRelation) Limit(limit int64) PostRelation {
 	q.limit = limit
 	return q
 }
@@ -370,7 +644,7 @@ func (q *postRelation) Select(fields ...string) PostRelation {
 	return q
 }
 
-func (q *postRelation) Offset(offset uint64) PostRelation {
+func (q *postRelation) Offset(offset int64) PostRelation {
 	q.offset = offset
 	return q
 }
@@ -398,6 +672,7 @@ func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
 	defer rows.Close()
 
 	row := &Post{}
+	row.orm.existingRecord = true
 	ptrs, err := row.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -408,9 +683,14 @@ func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
 			return nil, err
 		}
 
-		post := &Post{}
-		*post = *row
-		posts = append(posts, post)
+		o := &Post{}
+		*o = *row
+
+		o.orm.old.ID = o.ID
+		o.orm.old.UserID = o.UserID
+		o.orm.old.Body = o.Body
+
+		posts = append(posts, o)
 	}
 
 	return posts, rows.Err()
@@ -419,18 +699,24 @@ func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
 func (q *postRelation) Take(ctx context.Context) (*Post, error) {
 	fields := q.columnFields()
 
-	post := &Post{}
-	ptrs, err := post.pointersForFields(fields)
+	o := &Post{}
+	o.orm.existingRecord = true
+	ptrs, err := o.pointersForFields(fields)
 	if err != nil {
 		return nil, err
 	}
 
-	err = q.Limit(1).queryRow(ctx, fields, ptrs)
+	q.limit = 1
+	err = q.queryRow(ctx, fields, ptrs)
 
-	return post, err
+	o.orm.old.ID = o.ID
+	o.orm.old.UserID = o.UserID
+	o.orm.old.Body = o.Body
+
+	return o, err
 }
 
-func (q *postRelation) Find(ctx context.Context, id uint64) (*Post, error) {
+func (q *postRelation) Find(ctx context.Context, id int64) (*Post, error) {
 	return q.FindBy(ctx, "id", id)
 }
 

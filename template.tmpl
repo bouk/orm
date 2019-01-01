@@ -12,6 +12,18 @@ type {{.StructName}} struct { {{range .Columns}}
 	// {{.FieldName}} ...
 	{{.FieldName}} {{.Type}}
 {{end}}
+
+	orm struct {
+		// If true, then this record exists in the DB
+		existingRecord bool
+		deleted        bool
+
+		old struct { {{range .Columns}}
+      // {{.FieldName}} ...
+      {{.FieldName}} {{.Type}}
+{{end}}
+		}
+	}
 }
 {{$table := .}}{{range .HasMany}}
 func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
@@ -23,6 +35,81 @@ func (o *{{$table.StructName}}) {{.StructName}}(ctx context.Context) (*{{.Struct
 	return {{.RelationName}}().Find(ctx, o.{{.StructName}}ID)
 }
 {{end}}
+
+func (o *{{.StructName}}) Save(ctx context.Context) error {
+  if o.orm.deleted {
+    return fmt.Errorf("record deleted")
+  }
+
+	db := getDB(ctx)
+	if o.orm.existingRecord {
+		stmt := &rel.UpdateStatement{
+			Table: "users",
+			Wheres: []rel.Expr{
+        &rel.Equality{
+          Field: "id",
+          Expr:  &rel.BindParam{Value: o.orm.old.ID},
+        },
+      },
+		}
+
+{{range .Columns}}
+    if o.{{.FieldName}} != o.orm.old.{{.FieldName}} {
+      stmt.Values = append(stmt.Values, &rel.Assignment{
+        Column: {{.Name | printf "%q"}},
+				Value: &rel.BindParam{
+          Value: o.{{.FieldName}},
+				},
+      })
+    }
+{{end}}
+
+		query, values := stmt.Build()
+		_, err := db.ExecContext(ctx, query, values...)
+		if err != nil {
+			return err
+		}
+	} else {
+		stmt := &rel.InsertStatement{
+			Table: "users",
+		}
+    {{range .Columns}}{{if eq .Name "id"}}
+    if o.{{.FieldName}} != 0 { {{end}}
+    stmt.Columns = append(stmt.Columns, {{.Name | printf "%q"}})
+    stmt.Values = append(stmt.Values, &rel.BindParam{
+        Value: o.{{.FieldName}},
+    }){{if eq .Name "id"}}
+    }{{end}}{{end}}
+
+		query, values := stmt.Build()
+		res, err := db.ExecContext(ctx, query, values...)
+		if err != nil {
+			return err
+		}
+		o.orm.existingRecord = true
+
+    if o.ID == 0 {
+      o.ID, err = res.LastInsertId()
+      if err != nil {
+        return err
+      }
+    }
+	}
+
+  {{range .Columns}}
+  o.orm.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
+
+  return nil
+}
+
+func (o *{{.StructName}}) Delete(ctx context.Context) error {
+	_, err := {{.RelationName}}().Where("id", o.ID).DeleteAll(ctx)
+	if err != nil {
+		return err
+	}
+  o.orm.deleted = true
+	return err
+}
 
 func (o *{{.StructName}}) fieldPointerForColumn(column string) interface{} {
 	switch column { {{range .Columns}}
@@ -47,20 +134,19 @@ func (o *{{.StructName}}) pointersForFields(fields []string) ([]interface{}, err
 
 type {{.StructName}}Relation interface {
 	All(ctx context.Context) ([]*{{.StructName}}, error)
-	Count(ctx context.Context) (uint64, error)
-	Find(ctx context.Context, id uint64) (*{{.StructName}}, error)
+	Count(ctx context.Context) (int64, error)
+  // Create
+	DeleteAll(ctx context.Context) (int64, error)
+	Find(ctx context.Context, id int64) (*{{.StructName}}, error)
 	FindBy(ctx context.Context, query string, args ...interface{}) (*{{.StructName}}, error)
 	First(ctx context.Context) (*{{.StructName}}, error)
 	Last(ctx context.Context) (*{{.StructName}}, error)
-	Limit(limit uint64) {{.StructName}}Relation
-	Offset(offset uint64) {{.StructName}}Relation
+	Limit(limit int64) {{.StructName}}Relation
+	Offset(offset int64) {{.StructName}}Relation
 	Order(query string, args ...string) {{.StructName}}Relation
 	Select(fields ...string) {{.StructName}}Relation
 	Take(ctx context.Context) (*{{.StructName}}, error)
 	Where(query string, args ...interface{}) {{.StructName}}Relation
-
-	queryRow(ctx context.Context, fields []string, dest []interface{}) error
-	query(ctx context.Context, fields []string) (*sql.Rows, error)
 }
 
 func {{.RelationName}}() {{.StructName}}Relation {
@@ -71,8 +157,8 @@ type {{.Singular}}Relation struct {
 	fields      []string
 	whereClause []rel.Expr
 	orderValues []rel.Expr
-	limit       uint64
-	offset      uint64
+	limit       int64
+	offset      int64
 }
 
 func (q *{{.Singular}}Relation) buildQuery(fields []string) (query string, args []interface{}) {
@@ -105,10 +191,26 @@ func (q *{{.Singular}}Relation) query(ctx context.Context, fields []string) (*sq
 	return db.QueryContext(ctx, query, args)
 }
 
-func (q *{{.Singular}}Relation) Count(ctx context.Context) (uint64, error) {
-	var count uint64
+func (q *{{.Singular}}Relation) Count(ctx context.Context) (int64, error) {
+	var count int64
 	err := q.queryRow(ctx, []string{"COUNT(*)"}, []interface{}{&count})
 	return count, err
+}
+
+func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context) (int64, error) {
+	s := rel.DeleteStatement{
+		Table:   "{{.Name}}",
+		Wheres:  q.whereClause,
+	}
+
+	query, args := s.Build()
+
+	db := getDB(ctx)
+  res, err := db.ExecContext(ctx, query, args...)
+  if err != nil {
+		return 0, err
+  }
+  return res.RowsAffected()
 }
 
 func (q *{{.Singular}}Relation) Where(query string, args ...interface{}) {{.StructName}}Relation {
@@ -131,7 +233,7 @@ func (q *{{.Singular}}Relation) Where(query string, args ...interface{}) {{.Stru
 	return q
 }
 
-func (q *{{.Singular}}Relation) Limit(limit uint64) {{.StructName}}Relation {
+func (q *{{.Singular}}Relation) Limit(limit int64) {{.StructName}}Relation {
 	q.limit = limit
 	return q
 }
@@ -141,7 +243,7 @@ func (q *{{.Singular}}Relation) Select(fields ...string) {{.StructName}}Relation
 	return q
 }
 
-func (q *{{.Singular}}Relation) Offset(offset uint64) {{.StructName}}Relation {
+func (q *{{.Singular}}Relation) Offset(offset int64) {{.StructName}}Relation {
 	q.offset = offset
 	return q
 }
@@ -167,6 +269,7 @@ func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, er
 	defer rows.Close()
 
 	row := &{{.StructName}}{}
+  row.orm.existingRecord = true
 	ptrs, err := row.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -177,9 +280,13 @@ func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, er
 			return nil, err
 		}
 
-		{{.Singular}} := &{{.StructName}}{}
-		*{{.Singular}} = *row
-		{{.Name}} = append({{.Name}}, {{.Singular}})
+		o := &{{.StructName}}{}
+		*o = *row
+
+    {{range .Columns}}
+    o.orm.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
+
+		{{.Name}} = append({{.Name}}, o)
 	}
 
 	return {{.Name}}, rows.Err()
@@ -188,18 +295,22 @@ func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, er
 func (q *{{.Singular}}Relation) Take(ctx context.Context) (*{{.StructName}}, error) {
 	fields := q.columnFields()
 
-	{{.Singular}} := &{{.StructName}}{}
-	ptrs, err := {{.Singular}}.pointersForFields(fields)
+	o := &{{.StructName}}{}
+  o.orm.existingRecord = true
+	ptrs, err := o.pointersForFields(fields)
 	if err != nil {
 		return nil, err
 	}
 
-	err = q.Limit(1).queryRow(ctx, fields, ptrs)
+  q.limit = 1
+	err = q.queryRow(ctx, fields, ptrs)
+  {{range .Columns}}
+  o.orm.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
 
-	return {{.Singular}}, err
+	return o, err
 }
 
-func (q *{{.Singular}}Relation) Find(ctx context.Context, id uint64) (*{{.StructName}}, error) {
+func (q *{{.Singular}}Relation) Find(ctx context.Context, id int64) (*{{.StructName}}, error) {
 	return q.FindBy(ctx, "id", id)
 }
 

@@ -15,7 +15,7 @@ func main() {
 			Columns: Columns{
 				{
 					Name: "id",
-					Type: "uint64",
+					Type: "int64",
 				},
 				{
 					Name: "first_name",
@@ -33,11 +33,11 @@ func main() {
 			Columns: Columns{
 				{
 					Name: "id",
-					Type: "uint64",
+					Type: "int64",
 				},
 				{
 					Name: "user_id",
-					Type: "uint64",
+					Type: "int64",
 				},
 				{
 					Name: "body",
