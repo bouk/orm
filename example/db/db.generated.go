@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"bou.ke/orm/ctxdb"
 	"bou.ke/orm/rel"
 )
 
@@ -45,7 +46,6 @@ func (o *User) Save(ctx context.Context) error {
 		return fmt.Errorf("record deleted")
 	}
 
-	db := getDB(ctx)
 	if o.orm.existingRecord {
 		stmt := &rel.UpdateStatement{
 			Table: "users",
@@ -85,7 +85,7 @@ func (o *User) Save(ctx context.Context) error {
 		}
 
 		query, values := stmt.Build()
-		_, err := db.ExecContext(ctx, query, values...)
+		_, err := ctxdb.Exec(ctx, query, values...)
 		if err != nil {
 			return err
 		}
@@ -110,7 +110,7 @@ func (o *User) Save(ctx context.Context) error {
 		})
 
 		query, values := stmt.Build()
-		res, err := db.ExecContext(ctx, query, values...)
+		res, err := ctxdb.Exec(ctx, query, values...)
 		if err != nil {
 			return err
 		}
@@ -211,17 +211,15 @@ func (q *userRelation) buildQuery(fields []string) (query string, args []interfa
 }
 
 func (q *userRelation) queryRow(ctx context.Context, fields []string, dest []interface{}) error {
-	db := getDB(ctx)
 	query, args := q.buildQuery(fields)
 
-	return db.QueryRowContext(ctx, query, args).Scan(dest...)
+	return ctxdb.QueryRow(ctx, query, args).Scan(dest...)
 }
 
 func (q *userRelation) query(ctx context.Context, fields []string) (*sql.Rows, error) {
-	db := getDB(ctx)
 	query, args := q.buildQuery(fields)
 
-	return db.QueryContext(ctx, query, args)
+	return ctxdb.Query(ctx, query, args)
 }
 
 func (q *userRelation) Count(ctx context.Context) (int64, error) {
@@ -238,8 +236,7 @@ func (q *userRelation) DeleteAll(ctx context.Context) (int64, error) {
 
 	query, args := s.Build()
 
-	db := getDB(ctx)
-	res, err := db.ExecContext(ctx, query, args...)
+	res, err := ctxdb.Exec(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -415,7 +412,6 @@ func (o *Post) Save(ctx context.Context) error {
 		return fmt.Errorf("record deleted")
 	}
 
-	db := getDB(ctx)
 	if o.orm.existingRecord {
 		stmt := &rel.UpdateStatement{
 			Table: "users",
@@ -455,7 +451,7 @@ func (o *Post) Save(ctx context.Context) error {
 		}
 
 		query, values := stmt.Build()
-		_, err := db.ExecContext(ctx, query, values...)
+		_, err := ctxdb.Exec(ctx, query, values...)
 		if err != nil {
 			return err
 		}
@@ -480,7 +476,7 @@ func (o *Post) Save(ctx context.Context) error {
 		})
 
 		query, values := stmt.Build()
-		res, err := db.ExecContext(ctx, query, values...)
+		res, err := ctxdb.Exec(ctx, query, values...)
 		if err != nil {
 			return err
 		}
@@ -581,17 +577,15 @@ func (q *postRelation) buildQuery(fields []string) (query string, args []interfa
 }
 
 func (q *postRelation) queryRow(ctx context.Context, fields []string, dest []interface{}) error {
-	db := getDB(ctx)
 	query, args := q.buildQuery(fields)
 
-	return db.QueryRowContext(ctx, query, args).Scan(dest...)
+	return ctxdb.QueryRow(ctx, query, args).Scan(dest...)
 }
 
 func (q *postRelation) query(ctx context.Context, fields []string) (*sql.Rows, error) {
-	db := getDB(ctx)
 	query, args := q.buildQuery(fields)
 
-	return db.QueryContext(ctx, query, args)
+	return ctxdb.Query(ctx, query, args)
 }
 
 func (q *postRelation) Count(ctx context.Context) (int64, error) {
@@ -608,8 +602,7 @@ func (q *postRelation) DeleteAll(ctx context.Context) (int64, error) {
 
 	query, args := s.Build()
 
-	db := getDB(ctx)
-	res, err := db.ExecContext(ctx, query, args...)
+	res, err := ctxdb.Exec(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
