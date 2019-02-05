@@ -2,8 +2,8 @@
 * Validations
 * Preloading
 * Timestamp columns
-* Reflecting databases
 * Tests
+* Reflecting databases
 * SQLite
 * MySQL
 * PostgresQL

@@ -3,3 +3,9 @@ CREATE TABLE users (
   first_name TEXT NOT NULL,
   last_name  TEXT NOT NULL
 );
+
+CREATE TABLE posts (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  body TEXT NOT NULL
+);

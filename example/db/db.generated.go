@@ -168,6 +168,7 @@ func (o *User) pointersForFields(fields []string) ([]interface{}, error) {
 type UserRelation interface {
 	All(ctx context.Context) ([]*User, error)
 	Count(ctx context.Context) (int64, error)
+	// Create
 	DeleteAll(ctx context.Context) (int64, error)
 	Find(ctx context.Context, id int64) (*User, error)
 	FindBy(ctx context.Context, query string, args ...interface{}) (*User, error)
@@ -537,6 +538,7 @@ func (o *Post) pointersForFields(fields []string) ([]interface{}, error) {
 type PostRelation interface {
 	All(ctx context.Context) ([]*Post, error)
 	Count(ctx context.Context) (int64, error)
+	// Create
 	DeleteAll(ctx context.Context) (int64, error)
 	Find(ctx context.Context, id int64) (*Post, error)
 	FindBy(ctx context.Context, query string, args ...interface{}) (*Post, error)
