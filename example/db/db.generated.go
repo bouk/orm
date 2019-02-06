@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pkg/errors"
+
 	"bou.ke/orm/ctxdb"
 	"bou.ke/orm/rel"
 )
@@ -87,7 +89,7 @@ func (o *User) Save(ctx context.Context) error {
 		query, values := stmt.Build()
 		_, err := ctxdb.Exec(ctx, query, values...)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "executing %q", query)
 		}
 	} else {
 		stmt := &rel.InsertStatement{
@@ -112,7 +114,7 @@ func (o *User) Save(ctx context.Context) error {
 		query, values := stmt.Build()
 		res, err := ctxdb.Exec(ctx, query, values...)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "executing %q", query)
 		}
 		o.orm.existingRecord = true
 
@@ -165,23 +167,70 @@ func (o *User) pointersForFields(fields []string) ([]interface{}, error) {
 	return pointers, nil
 }
 
+// assignField sets the field to the value.
+// It panics if the field doesn't exist or the value is the wrong type.
+func (o *User) assignField(name string, value interface{}) {
+	switch name {
+	case "id":
+		o.ID = value.(int64)
+	case "first_name":
+		o.FirstName = value.(string)
+	case "last_name":
+		o.LastName = value.(string)
+	default:
+		panic("unknown field: " + name)
+	}
+}
+
 type UserRelation interface {
+	// All ...
 	All(ctx context.Context) ([]*User, error)
+
+	// Count ...
 	Count(ctx context.Context) (int64, error)
+
 	// Create
+	// TODO
+
+	// DeleteAll ...
 	DeleteAll(ctx context.Context) (int64, error)
+
+	// Find ...
 	Find(ctx context.Context, id int64) (*User, error)
+
+	// FindBy ...
 	FindBy(ctx context.Context, query string, args ...interface{}) (*User, error)
+
+	// First ...
 	First(ctx context.Context) (*User, error)
+
+	// Last ...
 	Last(ctx context.Context) (*User, error)
+
+	// Limit ...
 	Limit(limit int64) UserRelation
+
+	// New creates a User populated with the scope of the relation
+	New() *User
+
+	// Offset ...
 	Offset(offset int64) UserRelation
+
+	// Order ...
 	Order(query string, args ...string) UserRelation
+
+	// Select ...
 	Select(fields ...string) UserRelation
+
+	// Take ...
 	Take(ctx context.Context) (*User, error)
+
+	// Where ...
 	Where(query string, args ...interface{}) UserRelation
 }
 
+// Users returns a UserRelation, allowing you to build a query.
+// Note: the intermediate result of calls to the Relation can not be reused.
 func Users() UserRelation {
 	return &userRelation{}
 }
@@ -213,13 +262,13 @@ func (q *userRelation) buildQuery(fields []string) (query string, args []interfa
 func (q *userRelation) queryRow(ctx context.Context, fields []string, dest []interface{}) error {
 	query, args := q.buildQuery(fields)
 
-	return ctxdb.QueryRow(ctx, query, args).Scan(dest...)
+	return ctxdb.QueryRow(ctx, query, args...).Scan(dest...)
 }
 
 func (q *userRelation) query(ctx context.Context, fields []string) (*sql.Rows, error) {
 	query, args := q.buildQuery(fields)
 
-	return ctxdb.Query(ctx, query, args)
+	return ctxdb.Query(ctx, query, args...)
 }
 
 func (q *userRelation) Count(ctx context.Context) (int64, error) {
@@ -253,7 +302,7 @@ func (q *userRelation) Where(query string, args ...interface{}) UserRelation {
 		Expr:  &rel.BindParam{Value: args[0]},
 	})
 
-	for i := 1; i <= len(args); i += 2 {
+	for i := 1; i < len(args); i += 2 {
 		q.whereClause = append(q.whereClause, &rel.Equality{
 			Field: args[i].(string),
 			Expr:  &rel.BindParam{Value: args[i+1]},
@@ -266,6 +315,19 @@ func (q *userRelation) Where(query string, args ...interface{}) UserRelation {
 func (q *userRelation) Limit(limit int64) UserRelation {
 	q.limit = limit
 	return q
+}
+
+func (q *userRelation) New() *User {
+	o := &User{}
+	for _, w := range q.whereClause {
+		if eq, ok := w.(*rel.Equality); ok {
+			if bind, ok := eq.Expr.(*rel.BindParam); ok {
+				o.assignField(eq.Field, bind.Value)
+			}
+		}
+	}
+
+	return o
 }
 
 func (q *userRelation) Select(fields ...string) UserRelation {
@@ -337,6 +399,9 @@ func (q *userRelation) Take(ctx context.Context) (*User, error) {
 
 	q.limit = 1
 	err = q.queryRow(ctx, fields, ptrs)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 
 	o.orm.old.ID = o.ID
 	o.orm.old.FirstName = o.FirstName
@@ -366,9 +431,13 @@ func (q *userRelation) Order(query string, args ...string) UserRelation {
 		args = []string{"ASC"}
 	}
 
+	if len(args)%2 != 1 {
+		panic("invalid where call")
+	}
+
 	q.orderValues = append(q.orderValues, orderDirection(&rel.Literal{Value: query}, args[0]))
 
-	for i := 1; i <= len(args); i += 2 {
+	for i := 1; i < len(args); i += 2 {
 		q.orderValues = append(q.orderValues, orderDirection(&rel.Literal{Value: args[i]}, args[i+1]))
 	}
 
@@ -414,7 +483,7 @@ func (o *Post) Save(ctx context.Context) error {
 
 	if o.orm.existingRecord {
 		stmt := &rel.UpdateStatement{
-			Table: "users",
+			Table: "posts",
 			Wheres: []rel.Expr{
 				&rel.Equality{
 					Field: "id",
@@ -453,11 +522,11 @@ func (o *Post) Save(ctx context.Context) error {
 		query, values := stmt.Build()
 		_, err := ctxdb.Exec(ctx, query, values...)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "executing %q", query)
 		}
 	} else {
 		stmt := &rel.InsertStatement{
-			Table: "users",
+			Table: "posts",
 		}
 
 		if o.ID != 0 {
@@ -478,7 +547,7 @@ func (o *Post) Save(ctx context.Context) error {
 		query, values := stmt.Build()
 		res, err := ctxdb.Exec(ctx, query, values...)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "executing %q", query)
 		}
 		o.orm.existingRecord = true
 
@@ -531,23 +600,70 @@ func (o *Post) pointersForFields(fields []string) ([]interface{}, error) {
 	return pointers, nil
 }
 
+// assignField sets the field to the value.
+// It panics if the field doesn't exist or the value is the wrong type.
+func (o *Post) assignField(name string, value interface{}) {
+	switch name {
+	case "id":
+		o.ID = value.(int64)
+	case "user_id":
+		o.UserID = value.(int64)
+	case "body":
+		o.Body = value.(string)
+	default:
+		panic("unknown field: " + name)
+	}
+}
+
 type PostRelation interface {
+	// All ...
 	All(ctx context.Context) ([]*Post, error)
+
+	// Count ...
 	Count(ctx context.Context) (int64, error)
+
 	// Create
+	// TODO
+
+	// DeleteAll ...
 	DeleteAll(ctx context.Context) (int64, error)
+
+	// Find ...
 	Find(ctx context.Context, id int64) (*Post, error)
+
+	// FindBy ...
 	FindBy(ctx context.Context, query string, args ...interface{}) (*Post, error)
+
+	// First ...
 	First(ctx context.Context) (*Post, error)
+
+	// Last ...
 	Last(ctx context.Context) (*Post, error)
+
+	// Limit ...
 	Limit(limit int64) PostRelation
+
+	// New creates a Post populated with the scope of the relation
+	New() *Post
+
+	// Offset ...
 	Offset(offset int64) PostRelation
+
+	// Order ...
 	Order(query string, args ...string) PostRelation
+
+	// Select ...
 	Select(fields ...string) PostRelation
+
+	// Take ...
 	Take(ctx context.Context) (*Post, error)
+
+	// Where ...
 	Where(query string, args ...interface{}) PostRelation
 }
 
+// Posts returns a PostRelation, allowing you to build a query.
+// Note: the intermediate result of calls to the Relation can not be reused.
 func Posts() PostRelation {
 	return &postRelation{}
 }
@@ -579,13 +695,13 @@ func (q *postRelation) buildQuery(fields []string) (query string, args []interfa
 func (q *postRelation) queryRow(ctx context.Context, fields []string, dest []interface{}) error {
 	query, args := q.buildQuery(fields)
 
-	return ctxdb.QueryRow(ctx, query, args).Scan(dest...)
+	return ctxdb.QueryRow(ctx, query, args...).Scan(dest...)
 }
 
 func (q *postRelation) query(ctx context.Context, fields []string) (*sql.Rows, error) {
 	query, args := q.buildQuery(fields)
 
-	return ctxdb.Query(ctx, query, args)
+	return ctxdb.Query(ctx, query, args...)
 }
 
 func (q *postRelation) Count(ctx context.Context) (int64, error) {
@@ -619,7 +735,7 @@ func (q *postRelation) Where(query string, args ...interface{}) PostRelation {
 		Expr:  &rel.BindParam{Value: args[0]},
 	})
 
-	for i := 1; i <= len(args); i += 2 {
+	for i := 1; i < len(args); i += 2 {
 		q.whereClause = append(q.whereClause, &rel.Equality{
 			Field: args[i].(string),
 			Expr:  &rel.BindParam{Value: args[i+1]},
@@ -632,6 +748,19 @@ func (q *postRelation) Where(query string, args ...interface{}) PostRelation {
 func (q *postRelation) Limit(limit int64) PostRelation {
 	q.limit = limit
 	return q
+}
+
+func (q *postRelation) New() *Post {
+	o := &Post{}
+	for _, w := range q.whereClause {
+		if eq, ok := w.(*rel.Equality); ok {
+			if bind, ok := eq.Expr.(*rel.BindParam); ok {
+				o.assignField(eq.Field, bind.Value)
+			}
+		}
+	}
+
+	return o
 }
 
 func (q *postRelation) Select(fields ...string) PostRelation {
@@ -703,6 +832,9 @@ func (q *postRelation) Take(ctx context.Context) (*Post, error) {
 
 	q.limit = 1
 	err = q.queryRow(ctx, fields, ptrs)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 
 	o.orm.old.ID = o.ID
 	o.orm.old.UserID = o.UserID
@@ -732,9 +864,13 @@ func (q *postRelation) Order(query string, args ...string) PostRelation {
 		args = []string{"ASC"}
 	}
 
+	if len(args)%2 != 1 {
+		panic("invalid where call")
+	}
+
 	q.orderValues = append(q.orderValues, orderDirection(&rel.Literal{Value: query}, args[0]))
 
-	for i := 1; i <= len(args); i += 2 {
+	for i := 1; i < len(args); i += 2 {
 		q.orderValues = append(q.orderValues, orderDirection(&rel.Literal{Value: args[i]}, args[i+1]))
 	}
 

@@ -1,32 +1,34 @@
 package rel
 
-type UpdateStatement struct {
-	Table  string
-	Values []Expr
-	Wheres []Expr
+type InsertStatement struct {
+	Table   string
+	Columns []string
+	Values  []Expr
 }
 
-func (s *UpdateStatement) Build() (string, []interface{}) {
+func (s *InsertStatement) Build() (string, []interface{}) {
 	var c collector
-	c.WriteString("UPDATE ")
+	c.WriteString("INSERT INTO ")
 	c.WriteString(s.Table)
-	c.WriteString(" SET ")
+	c.WriteString(" ")
+	if len(s.Columns) > 0 {
+		c.WriteString("(")
+		for i, value := range s.Columns {
+			if i > 0 {
+				c.WriteString(", ")
+			}
+			c.WriteString(value)
+		}
+		c.WriteString(")")
+	}
+	c.WriteString(" VALUES (")
 	for i, value := range s.Values {
 		if i > 0 {
 			c.WriteString(", ")
 		}
 		value.writeTo(&c)
 	}
-
-	if len(s.Wheres) > 0 {
-		c.WriteString(" WHERE ")
-		for i, where := range s.Wheres {
-			if i > 0 {
-				c.WriteString(" AND ")
-			}
-			where.writeTo(&c)
-		}
-	}
+	c.WriteString(")")
 
 	return c.String(), c.values
 }
