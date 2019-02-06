@@ -14,9 +14,12 @@ func (r rollback) Error() string {
 }
 
 var (
-	missingDBErr       = errors.New("missing Databaser in context")
-	cantTxErr          = errors.New("can't begin transaction on Databaser in context")
-	Rollback     error = rollback{}
+	Rollback error = rollback{}
+)
+
+var (
+	missingDBErr = errors.New("missing Databaser in context")
+	cantTxErr    = errors.New("can't begin transaction on Databaser in context")
 )
 
 // Databaser is a general interface for sql.Conn, sql.DB, and sql.Tx
@@ -36,9 +39,9 @@ func With(ctx context.Context, db Databaser) context.Context {
 	return context.WithValue(ctx, connKey{}, db)
 }
 
-func getDB(ctx context.Context) Databaser {
-	db, _ := ctx.Value(connKey{}).(Databaser)
-	return db
+func getDB(ctx context.Context) (Databaser, bool) {
+	db, ok := ctx.Value(connKey{}).(Databaser)
+	return db, ok
 }
 
 type beginTxer interface {
@@ -47,8 +50,8 @@ type beginTxer interface {
 
 // Tx creates a new transaction in the Conn or DB in the context, and executes f with this transaction. It does a rollback if f returns an error, and returns that error. It will rollback and return nil if the error is ctxdb.Rollback. If f does not return an error, it will commit.
 func Tx(ctx context.Context, f func(ctx context.Context) error) error {
-	db := getDB(ctx)
-	if db == nil {
+	db, ok := getDB(ctx)
+	if !ok {
 		return missingDBErr
 	}
 
@@ -77,8 +80,8 @@ func Tx(ctx context.Context, f func(ctx context.Context) error) error {
 
 // Exec executes a query without returning any rows. The args are for any placeholder parameters in the query.
 func Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	db := getDB(ctx)
-	if db == nil {
+	db, ok := getDB(ctx)
+	if !ok {
 		return nil, missingDBErr
 	}
 	return db.ExecContext(ctx, query, args...)
@@ -86,8 +89,8 @@ func Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, e
 
 // Query executes a query that returns rows, typically a SELECT. The args are for any placeholder parameters in the query.
 func Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	db := getDB(ctx)
-	if db == nil {
+	db, ok := getDB(ctx)
+	if !ok {
 		return nil, missingDBErr
 	}
 	return db.QueryContext(ctx, query, args...)
@@ -95,8 +98,8 @@ func Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, e
 
 // QueryRow executes a query that is expected to return at most one row. QueryRow always returns a non-nil value. Errors are deferred until Row's Scan method is called. If the query selects no rows, the *Row's Scan will return ErrNoRows. Otherwise, the *Row's Scan scans the first selected row and discards the rest.
 func QueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row {
-	db := getDB(ctx)
-	if db == nil {
+	db, ok := getDB(ctx)
+	if !ok {
 		return (&row{err: missingDBErr}).intoDBRow()
 	}
 	return db.QueryRowContext(ctx, query, args...)
