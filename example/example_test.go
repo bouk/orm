@@ -1,10 +1,12 @@
 package example
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"bou.ke/ctxdb"
 	"bou.ke/orm/example/db"
 )
 
@@ -16,10 +18,14 @@ func TestEmptyUser(t *testing.T) {
 }
 
 func TestCreateUser(t *testing.T) {
-	u := db.Users().New()
-	err := u.Save(ctx)
-	require.NoError(t, err)
-	require.NotZero(t, u.ID)
+	ctxdb.Tx(ctx, func(ctx context.Context) error {
+		u := db.Users().New()
+		err := u.Save(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, u.ID)
+
+		return ctxdb.Rollback
+	})
 }
 
 func TestCreatePostUnderUser(t *testing.T) {

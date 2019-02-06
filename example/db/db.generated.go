@@ -7,7 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"bou.ke/orm/ctxdb"
+	"bou.ke/ctxdb"
 	"bou.ke/orm/rel"
 )
 

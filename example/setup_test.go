@@ -8,7 +8,7 @@ import (
 
 	"bou.ke/tempdb/sqlite3"
 
-	"bou.ke/orm/ctxdb"
+	"bou.ke/ctxdb"
 )
 
 var ctx context.Context
