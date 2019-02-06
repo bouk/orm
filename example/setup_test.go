@@ -3,12 +3,12 @@ package example
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"testing"
 
-	"bou.ke/tempdb/sqlite3"
-
 	"bou.ke/ctxdb"
+	"bou.ke/tempdb/sqlite3"
 )
 
 var ctx context.Context
@@ -20,19 +20,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	defer c()
-	_, err = db.Exec(`
-CREATE TABLE users (
-  id INTEGER PRIMARY KEY,
-  first_name TEXT NOT NULL,
-  last_name  TEXT NOT NULL
-);
-
-CREATE TABLE posts (
-  id INTEGER PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  body TEXT NOT NULL
-);
-`)
+	migration, err := ioutil.ReadFile("./migrations/000000_schema/up.sql")
+	if err != nil {
+		fmt.Printf("Failed to read migration: %v\n", err)
+		os.Exit(3)
+	}
+	_, err = db.Exec(string(migration))
 	if err != nil {
 		fmt.Printf("Failed to run setup SQL: %v\n", err)
 		os.Exit(2)
