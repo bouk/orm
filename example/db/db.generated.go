@@ -11,7 +11,7 @@ import (
 	"bou.ke/orm/rel"
 )
 
-type User struct {
+type UserFields struct {
 	// ID ...
 	ID int64
 
@@ -20,23 +20,16 @@ type User struct {
 
 	// LastName ...
 	LastName string
+}
 
-	orm struct {
-		// If true, then this record exists in the DB
-		existingRecord bool
-		deleted        bool
+type User struct {
+	UserFields
 
-		old struct {
-			// ID ...
-			ID int64
+	// If true, then this record exists in the DB
+	persisted bool
+	deleted   bool
 
-			// FirstName ...
-			FirstName string
-
-			// LastName ...
-			LastName string
-		}
-	}
+	old UserFields
 }
 
 func (o *User) Posts() PostRelation {
@@ -44,22 +37,22 @@ func (o *User) Posts() PostRelation {
 }
 
 func (o *User) Save(ctx context.Context) error {
-	if o.orm.deleted {
+	if o.deleted {
 		return fmt.Errorf("record deleted")
 	}
 
-	if o.orm.existingRecord {
+	if o.persisted {
 		stmt := &rel.UpdateStatement{
 			Table: "users",
 			Wheres: []rel.Expr{
 				&rel.Equality{
 					Field: "id",
-					Expr:  &rel.BindParam{Value: o.orm.old.ID},
+					Expr:  &rel.BindParam{Value: o.old.ID},
 				},
 			},
 		}
 
-		if o.ID != o.orm.old.ID {
+		if o.ID != o.old.ID {
 			stmt.Values = append(stmt.Values, &rel.Assignment{
 				Column: "id",
 				Value: &rel.BindParam{
@@ -68,7 +61,7 @@ func (o *User) Save(ctx context.Context) error {
 			})
 		}
 
-		if o.FirstName != o.orm.old.FirstName {
+		if o.FirstName != o.old.FirstName {
 			stmt.Values = append(stmt.Values, &rel.Assignment{
 				Column: "first_name",
 				Value: &rel.BindParam{
@@ -77,7 +70,7 @@ func (o *User) Save(ctx context.Context) error {
 			})
 		}
 
-		if o.LastName != o.orm.old.LastName {
+		if o.LastName != o.old.LastName {
 			stmt.Values = append(stmt.Values, &rel.Assignment{
 				Column: "last_name",
 				Value: &rel.BindParam{
@@ -116,7 +109,7 @@ func (o *User) Save(ctx context.Context) error {
 		if err != nil {
 			return errors.Wrapf(err, "executing %q", query)
 		}
-		o.orm.existingRecord = true
+		o.persisted = true
 
 		if o.ID == 0 {
 			o.ID, err = res.LastInsertId()
@@ -126,9 +119,9 @@ func (o *User) Save(ctx context.Context) error {
 		}
 	}
 
-	o.orm.old.ID = o.ID
-	o.orm.old.FirstName = o.FirstName
-	o.orm.old.LastName = o.LastName
+	o.old.ID = o.ID
+	o.old.FirstName = o.FirstName
+	o.old.LastName = o.LastName
 
 	return nil
 }
@@ -138,7 +131,7 @@ func (o *User) Delete(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	o.orm.deleted = true
+	o.deleted = true
 	return err
 }
 
@@ -363,7 +356,7 @@ func (q *userRelation) All(ctx context.Context) ([]*User, error) {
 	defer rows.Close()
 
 	row := &User{}
-	row.orm.existingRecord = true
+	row.persisted = true
 	ptrs, err := row.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -377,9 +370,9 @@ func (q *userRelation) All(ctx context.Context) ([]*User, error) {
 		o := &User{}
 		*o = *row
 
-		o.orm.old.ID = o.ID
-		o.orm.old.FirstName = o.FirstName
-		o.orm.old.LastName = o.LastName
+		o.old.ID = o.ID
+		o.old.FirstName = o.FirstName
+		o.old.LastName = o.LastName
 
 		users = append(users, o)
 	}
@@ -391,7 +384,7 @@ func (q *userRelation) Take(ctx context.Context) (*User, error) {
 	fields := q.columnFields()
 
 	o := &User{}
-	o.orm.existingRecord = true
+	o.persisted = true
 	ptrs, err := o.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -403,9 +396,9 @@ func (q *userRelation) Take(ctx context.Context) (*User, error) {
 		return nil, nil
 	}
 
-	o.orm.old.ID = o.ID
-	o.orm.old.FirstName = o.FirstName
-	o.orm.old.LastName = o.LastName
+	o.old.ID = o.ID
+	o.old.FirstName = o.FirstName
+	o.old.LastName = o.LastName
 
 	return o, err
 }
@@ -444,7 +437,7 @@ func (q *userRelation) Order(query string, args ...string) UserRelation {
 	return q
 }
 
-type Post struct {
+type PostFields struct {
 	// ID ...
 	ID int64
 
@@ -453,23 +446,16 @@ type Post struct {
 
 	// Body ...
 	Body string
+}
 
-	orm struct {
-		// If true, then this record exists in the DB
-		existingRecord bool
-		deleted        bool
+type Post struct {
+	PostFields
 
-		old struct {
-			// ID ...
-			ID int64
+	// If true, then this record exists in the DB
+	persisted bool
+	deleted   bool
 
-			// UserID ...
-			UserID int64
-
-			// Body ...
-			Body string
-		}
-	}
+	old PostFields
 }
 
 func (o *Post) User(ctx context.Context) (*User, error) {
@@ -477,22 +463,22 @@ func (o *Post) User(ctx context.Context) (*User, error) {
 }
 
 func (o *Post) Save(ctx context.Context) error {
-	if o.orm.deleted {
+	if o.deleted {
 		return fmt.Errorf("record deleted")
 	}
 
-	if o.orm.existingRecord {
+	if o.persisted {
 		stmt := &rel.UpdateStatement{
 			Table: "posts",
 			Wheres: []rel.Expr{
 				&rel.Equality{
 					Field: "id",
-					Expr:  &rel.BindParam{Value: o.orm.old.ID},
+					Expr:  &rel.BindParam{Value: o.old.ID},
 				},
 			},
 		}
 
-		if o.ID != o.orm.old.ID {
+		if o.ID != o.old.ID {
 			stmt.Values = append(stmt.Values, &rel.Assignment{
 				Column: "id",
 				Value: &rel.BindParam{
@@ -501,7 +487,7 @@ func (o *Post) Save(ctx context.Context) error {
 			})
 		}
 
-		if o.UserID != o.orm.old.UserID {
+		if o.UserID != o.old.UserID {
 			stmt.Values = append(stmt.Values, &rel.Assignment{
 				Column: "user_id",
 				Value: &rel.BindParam{
@@ -510,7 +496,7 @@ func (o *Post) Save(ctx context.Context) error {
 			})
 		}
 
-		if o.Body != o.orm.old.Body {
+		if o.Body != o.old.Body {
 			stmt.Values = append(stmt.Values, &rel.Assignment{
 				Column: "body",
 				Value: &rel.BindParam{
@@ -549,7 +535,7 @@ func (o *Post) Save(ctx context.Context) error {
 		if err != nil {
 			return errors.Wrapf(err, "executing %q", query)
 		}
-		o.orm.existingRecord = true
+		o.persisted = true
 
 		if o.ID == 0 {
 			o.ID, err = res.LastInsertId()
@@ -559,9 +545,9 @@ func (o *Post) Save(ctx context.Context) error {
 		}
 	}
 
-	o.orm.old.ID = o.ID
-	o.orm.old.UserID = o.UserID
-	o.orm.old.Body = o.Body
+	o.old.ID = o.ID
+	o.old.UserID = o.UserID
+	o.old.Body = o.Body
 
 	return nil
 }
@@ -571,7 +557,7 @@ func (o *Post) Delete(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	o.orm.deleted = true
+	o.deleted = true
 	return err
 }
 
@@ -796,7 +782,7 @@ func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
 	defer rows.Close()
 
 	row := &Post{}
-	row.orm.existingRecord = true
+	row.persisted = true
 	ptrs, err := row.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -810,9 +796,9 @@ func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
 		o := &Post{}
 		*o = *row
 
-		o.orm.old.ID = o.ID
-		o.orm.old.UserID = o.UserID
-		o.orm.old.Body = o.Body
+		o.old.ID = o.ID
+		o.old.UserID = o.UserID
+		o.old.Body = o.Body
 
 		posts = append(posts, o)
 	}
@@ -824,7 +810,7 @@ func (q *postRelation) Take(ctx context.Context) (*Post, error) {
 	fields := q.columnFields()
 
 	o := &Post{}
-	o.orm.existingRecord = true
+	o.persisted = true
 	ptrs, err := o.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -836,9 +822,9 @@ func (q *postRelation) Take(ctx context.Context) (*Post, error) {
 		return nil, nil
 	}
 
-	o.orm.old.ID = o.ID
-	o.orm.old.UserID = o.UserID
-	o.orm.old.Body = o.Body
+	o.old.ID = o.ID
+	o.old.UserID = o.UserID
+	o.old.Body = o.Body
 
 	return o, err
 }

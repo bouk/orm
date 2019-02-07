@@ -11,22 +11,20 @@ import (
 	"bou.ke/orm/rel"
 )
 {{range .Tables}}
-type {{.StructName}} struct { {{range .Columns}}
+type {{.StructName}}Fields struct { {{range .Columns}}
 	// {{.FieldName}} ...
 	{{.FieldName}} {{.Type}}
 {{end}}
+}
 
-	orm struct {
-		// If true, then this record exists in the DB
-		existingRecord bool
-		deleted        bool
+type {{.StructName}} struct {
+	{{.StructName}}Fields
 
-		old struct { {{range .Columns}}
-      // {{.FieldName}} ...
-      {{.FieldName}} {{.Type}}
-{{end}}
-		}
-	}
+  // If true, then this record exists in the DB
+  persisted bool
+  deleted   bool
+
+  old {{.StructName}}Fields
 }
 {{$table := .}}{{range .HasMany}}
 func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
@@ -40,23 +38,23 @@ func (o *{{$table.StructName}}) {{.StructName}}(ctx context.Context) (*{{.Struct
 {{end}}
 
 func (o *{{.StructName}}) Save(ctx context.Context) error {
-  if o.orm.deleted {
+  if o.deleted {
     return fmt.Errorf("record deleted")
   }
 
-	if o.orm.existingRecord {
+	if o.persisted {
 		stmt := &rel.UpdateStatement{
 			Table: {{.Name | printf "%q"}},
 			Wheres: []rel.Expr{
         &rel.Equality{
           Field: "id",
-          Expr:  &rel.BindParam{Value: o.orm.old.ID},
+          Expr:  &rel.BindParam{Value: o.old.ID},
         },
       },
 		}
 
 {{range .Columns}}
-    if o.{{.FieldName}} != o.orm.old.{{.FieldName}} {
+    if o.{{.FieldName}} != o.old.{{.FieldName}} {
       stmt.Values = append(stmt.Values, &rel.Assignment{
         Column: {{.Name | printf "%q"}},
 				Value: &rel.BindParam{
@@ -88,7 +86,7 @@ func (o *{{.StructName}}) Save(ctx context.Context) error {
 		if err != nil {
 			return errors.Wrapf(err, "executing %q", query)
 		}
-		o.orm.existingRecord = true
+		o.persisted = true
 
     if o.ID == 0 {
       o.ID, err = res.LastInsertId()
@@ -99,7 +97,7 @@ func (o *{{.StructName}}) Save(ctx context.Context) error {
 	}
 
   {{range .Columns}}
-  o.orm.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
+  o.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
 
   return nil
 }
@@ -109,7 +107,7 @@ func (o *{{.StructName}}) Delete(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-  o.orm.deleted = true
+  o.deleted = true
 	return err
 }
 
@@ -324,7 +322,7 @@ func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, er
 	defer rows.Close()
 
 	row := &{{.StructName}}{}
-  row.orm.existingRecord = true
+  row.persisted = true
 	ptrs, err := row.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -339,7 +337,7 @@ func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, er
 		*o = *row
 
     {{range .Columns}}
-    o.orm.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
+    o.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
 
 		{{.Name}} = append({{.Name}}, o)
 	}
@@ -351,7 +349,7 @@ func (q *{{.Singular}}Relation) Take(ctx context.Context) (*{{.StructName}}, err
 	fields := q.columnFields()
 
 	o := &{{.StructName}}{}
-  o.orm.existingRecord = true
+  o.persisted = true
 	ptrs, err := o.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -364,7 +362,7 @@ func (q *{{.Singular}}Relation) Take(ctx context.Context) (*{{.StructName}}, err
   }
 
   {{range .Columns}}
-  o.orm.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
+  o.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
 
 	return o, err
 }
