@@ -252,13 +252,15 @@ func (q *userRelation) buildQuery(fields []string) (query string, args []interfa
 	return s.Build()
 }
 
-func (q *userRelation) queryRow(ctx context.Context, fields []string, dest []interface{}) error {
+func (q *userRelation) queryRow(ctx context.Context, dest ...interface{}) error {
+	fields := q.columnFields()
 	query, args := q.buildQuery(fields)
 
 	return ctxdb.QueryRow(ctx, query, args...).Scan(dest...)
 }
 
-func (q *userRelation) query(ctx context.Context, fields []string) (*sql.Rows, error) {
+func (q *userRelation) query(ctx context.Context) (*sql.Rows, error) {
+	fields := q.columnFields()
 	query, args := q.buildQuery(fields)
 
 	return ctxdb.Query(ctx, query, args...)
@@ -266,7 +268,8 @@ func (q *userRelation) query(ctx context.Context, fields []string) (*sql.Rows, e
 
 func (q *userRelation) Count(ctx context.Context) (int64, error) {
 	var count int64
-	err := q.queryRow(ctx, []string{"COUNT(*)"}, []interface{}{&count})
+	q.fields = []string{"COUNT(*)"}
+	err := q.queryRow(ctx, &count)
 	return count, err
 }
 
@@ -347,9 +350,7 @@ func (q *userRelation) columnFields() []string {
 
 func (q *userRelation) All(ctx context.Context) ([]*User, error) {
 	var users []*User
-
-	fields := q.columnFields()
-	rows, err := q.query(ctx, fields)
+	rows, err := q.query(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +358,10 @@ func (q *userRelation) All(ctx context.Context) ([]*User, error) {
 
 	row := &User{}
 	row.persisted = true
+	fields, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
 	ptrs, err := row.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -381,26 +386,17 @@ func (q *userRelation) All(ctx context.Context) ([]*User, error) {
 }
 
 func (q *userRelation) Take(ctx context.Context) (*User, error) {
-	fields := q.columnFields()
-
-	o := &User{}
-	o.persisted = true
-	ptrs, err := o.pointersForFields(fields)
+	q.limit = 1
+	os, err := q.All(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	q.limit = 1
-	err = q.queryRow(ctx, fields, ptrs)
-	if err == sql.ErrNoRows {
+	if len(os) == 0 {
 		return nil, nil
 	}
 
-	o.old.ID = o.ID
-	o.old.FirstName = o.FirstName
-	o.old.LastName = o.LastName
-
-	return o, err
+	return os[0], nil
 }
 
 func (q *userRelation) Find(ctx context.Context, id int64) (*User, error) {
@@ -678,13 +674,15 @@ func (q *postRelation) buildQuery(fields []string) (query string, args []interfa
 	return s.Build()
 }
 
-func (q *postRelation) queryRow(ctx context.Context, fields []string, dest []interface{}) error {
+func (q *postRelation) queryRow(ctx context.Context, dest ...interface{}) error {
+	fields := q.columnFields()
 	query, args := q.buildQuery(fields)
 
 	return ctxdb.QueryRow(ctx, query, args...).Scan(dest...)
 }
 
-func (q *postRelation) query(ctx context.Context, fields []string) (*sql.Rows, error) {
+func (q *postRelation) query(ctx context.Context) (*sql.Rows, error) {
+	fields := q.columnFields()
 	query, args := q.buildQuery(fields)
 
 	return ctxdb.Query(ctx, query, args...)
@@ -692,7 +690,8 @@ func (q *postRelation) query(ctx context.Context, fields []string) (*sql.Rows, e
 
 func (q *postRelation) Count(ctx context.Context) (int64, error) {
 	var count int64
-	err := q.queryRow(ctx, []string{"COUNT(*)"}, []interface{}{&count})
+	q.fields = []string{"COUNT(*)"}
+	err := q.queryRow(ctx, &count)
 	return count, err
 }
 
@@ -773,9 +772,7 @@ func (q *postRelation) columnFields() []string {
 
 func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
 	var posts []*Post
-
-	fields := q.columnFields()
-	rows, err := q.query(ctx, fields)
+	rows, err := q.query(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -783,6 +780,10 @@ func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
 
 	row := &Post{}
 	row.persisted = true
+	fields, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
 	ptrs, err := row.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -807,26 +808,17 @@ func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
 }
 
 func (q *postRelation) Take(ctx context.Context) (*Post, error) {
-	fields := q.columnFields()
-
-	o := &Post{}
-	o.persisted = true
-	ptrs, err := o.pointersForFields(fields)
+	q.limit = 1
+	os, err := q.All(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	q.limit = 1
-	err = q.queryRow(ctx, fields, ptrs)
-	if err == sql.ErrNoRows {
+	if len(os) == 0 {
 		return nil, nil
 	}
 
-	o.old.ID = o.ID
-	o.old.UserID = o.UserID
-	o.old.Body = o.Body
-
-	return o, err
+	return os[0], nil
 }
 
 func (q *postRelation) Find(ctx context.Context, id int64) (*Post, error) {

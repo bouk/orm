@@ -220,13 +220,15 @@ func (q *{{.Singular}}Relation) buildQuery(fields []string) (query string, args 
 	return s.Build()
 }
 
-func (q *{{.Singular}}Relation) queryRow(ctx context.Context, fields []string, dest []interface{}) error {
+func (q *{{.Singular}}Relation) queryRow(ctx context.Context, dest ...interface{}) error {
+	fields := q.columnFields()
 	query, args := q.buildQuery(fields)
 
 	return ctxdb.QueryRow(ctx, query, args...).Scan(dest...)
 }
 
-func (q *{{.Singular}}Relation) query(ctx context.Context, fields []string) (*sql.Rows, error) {
+func (q *{{.Singular}}Relation) query(ctx context.Context) (*sql.Rows, error) {
+	fields := q.columnFields()
 	query, args := q.buildQuery(fields)
 
 	return ctxdb.Query(ctx, query, args...)
@@ -234,7 +236,8 @@ func (q *{{.Singular}}Relation) query(ctx context.Context, fields []string) (*sq
 
 func (q *{{.Singular}}Relation) Count(ctx context.Context) (int64, error) {
 	var count int64
-	err := q.queryRow(ctx, []string{"COUNT(*)"}, []interface{}{&count})
+  q.fields = []string{"COUNT(*)"}
+  err := q.queryRow(ctx, &count)
 	return count, err
 }
 
@@ -313,9 +316,7 @@ func (q *{{.Singular}}Relation) columnFields() []string {
 
 func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, error) {
 	var {{.Name}} []*{{.StructName}}
-
-	fields := q.columnFields()
-	rows, err := q.query(ctx, fields)
+	rows, err := q.query(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -323,6 +324,10 @@ func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, er
 
 	row := &{{.StructName}}{}
   row.persisted = true
+  fields, err := rows.Columns()
+  if err != nil {
+    return nil, err
+  }
 	ptrs, err := row.pointersForFields(fields)
 	if err != nil {
 		return nil, err
@@ -346,25 +351,17 @@ func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, er
 }
 
 func (q *{{.Singular}}Relation) Take(ctx context.Context) (*{{.StructName}}, error) {
-	fields := q.columnFields()
-
-	o := &{{.StructName}}{}
-  o.persisted = true
-	ptrs, err := o.pointersForFields(fields)
-	if err != nil {
-		return nil, err
-	}
-
   q.limit = 1
-	err = q.queryRow(ctx, fields, ptrs)
-  if err == sql.ErrNoRows {
+  os, err := q.All(ctx)
+  if err != nil {
+    return nil, err
+  }
+
+  if len(os) == 0 {
     return nil, nil
   }
 
-  {{range .Columns}}
-  o.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
-
-	return o, err
+  return os[0], nil
 }
 
 func (q *{{.Singular}}Relation) Find(ctx context.Context, id int64) (*{{.StructName}}, error) {
