@@ -23,11 +23,13 @@ func (b *BindParam) writeTo(c *collector) {
 }
 
 type Literal struct {
-	Value string
+	Text   string
+	Params []interface{}
 }
 
 func (l *Literal) writeTo(c *collector) {
-	c.WriteString(l.Value)
+	c.WriteString(l.Text)
+	c.values = append(c.values, l.Params...)
 }
 
 type Ascending struct {

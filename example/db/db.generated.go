@@ -13,6 +13,16 @@ import (
 
 var ErrNotFound error = errors.New("not found")
 
+type Relation interface {
+	// Count ...
+	Count(ctx context.Context) (int64, error)
+
+	// DeleteAll ...
+	DeleteAll(ctx context.Context) (int64, error)
+
+	// TODO: UpdateAll(ctx context.Context, query string, args ...interface{}) error
+}
+
 type UserFields struct {
 	// ID ...
 	ID int64
@@ -178,17 +188,12 @@ func (o *User) assignField(name string, value interface{}) {
 }
 
 type UserRelation interface {
+	Relation
+
 	// All ...
 	All(ctx context.Context) ([]*User, error)
 
-	// Count ...
-	Count(ctx context.Context) (int64, error)
-
-	// Create
-	// TODO
-
-	// DeleteAll ...
-	DeleteAll(ctx context.Context) (int64, error)
+	// TODO: Create(ctx context.Context, query string, args ...interface{}) (*User, error)
 
 	// Find ...
 	Find(ctx context.Context, id int64) (*User, error)
@@ -241,7 +246,7 @@ type userRelation struct {
 func (q *userRelation) buildQuery(fields []string) (query string, args []interface{}) {
 	columns := make([]rel.Expr, 0, len(fields))
 	for _, field := range fields {
-		columns = append(columns, &rel.Literal{Value: field})
+		columns = append(columns, &rel.Literal{Text: field})
 	}
 	s := rel.SelectStatement{
 		Columns: columns,
@@ -291,21 +296,10 @@ func (q *userRelation) DeleteAll(ctx context.Context) (int64, error) {
 }
 
 func (q *userRelation) Where(query string, args ...interface{}) UserRelation {
-	if len(args)%2 != 1 {
-		panic("invalid where call")
-	}
-
-	q.whereClause = append(q.whereClause, &rel.Equality{
-		Field: query,
-		Expr:  &rel.BindParam{Value: args[0]},
+	q.whereClause = append(q.whereClause, &rel.Literal{
+		Text:   query,
+		Params: args,
 	})
-
-	for i := 1; i < len(args); i += 2 {
-		q.whereClause = append(q.whereClause, &rel.Equality{
-			Field: args[i].(string),
-			Expr:  &rel.BindParam{Value: args[i+1]},
-		})
-	}
 
 	return q
 }
@@ -402,7 +396,7 @@ func (q *userRelation) Take(ctx context.Context) (*User, error) {
 }
 
 func (q *userRelation) Find(ctx context.Context, id int64) (*User, error) {
-	return q.FindBy(ctx, "id", id)
+	return q.FindBy(ctx, "id = ?", id)
 }
 
 func (q *userRelation) FindBy(ctx context.Context, query string, args ...interface{}) (*User, error) {
@@ -410,26 +404,18 @@ func (q *userRelation) FindBy(ctx context.Context, query string, args ...interfa
 }
 
 func (q *userRelation) First(ctx context.Context) (*User, error) {
-	return q.Order("id", "ASC").Take(ctx)
+	return q.Order("id ASC").Take(ctx)
 }
 
 func (q *userRelation) Last(ctx context.Context) (*User, error) {
-	return q.Order("id", "DESC").Take(ctx)
+	return q.Order("id DESC").Take(ctx)
 }
 
 func (q *userRelation) Order(query string, args ...string) UserRelation {
-	if len(args) == 0 {
-		args = []string{"ASC"}
-	}
+	q.orderValues = append(q.orderValues, &rel.Literal{Text: query})
 
-	if len(args)%2 != 1 {
-		panic("invalid where call")
-	}
-
-	q.orderValues = append(q.orderValues, orderDirection(&rel.Literal{Value: query}, args[0]))
-
-	for i := 1; i < len(args); i += 2 {
-		q.orderValues = append(q.orderValues, orderDirection(&rel.Literal{Value: args[i]}, args[i+1]))
+	for i := 0; i < len(args); i++ {
+		q.orderValues = append(q.orderValues, &rel.Literal{Text: args[i]})
 	}
 
 	return q
@@ -600,17 +586,12 @@ func (o *Post) assignField(name string, value interface{}) {
 }
 
 type PostRelation interface {
+	Relation
+
 	// All ...
 	All(ctx context.Context) ([]*Post, error)
 
-	// Count ...
-	Count(ctx context.Context) (int64, error)
-
-	// Create
-	// TODO
-
-	// DeleteAll ...
-	DeleteAll(ctx context.Context) (int64, error)
+	// TODO: Create(ctx context.Context, query string, args ...interface{}) (*Post, error)
 
 	// Find ...
 	Find(ctx context.Context, id int64) (*Post, error)
@@ -663,7 +644,7 @@ type postRelation struct {
 func (q *postRelation) buildQuery(fields []string) (query string, args []interface{}) {
 	columns := make([]rel.Expr, 0, len(fields))
 	for _, field := range fields {
-		columns = append(columns, &rel.Literal{Value: field})
+		columns = append(columns, &rel.Literal{Text: field})
 	}
 	s := rel.SelectStatement{
 		Columns: columns,
@@ -713,21 +694,10 @@ func (q *postRelation) DeleteAll(ctx context.Context) (int64, error) {
 }
 
 func (q *postRelation) Where(query string, args ...interface{}) PostRelation {
-	if len(args)%2 != 1 {
-		panic("invalid where call")
-	}
-
-	q.whereClause = append(q.whereClause, &rel.Equality{
-		Field: query,
-		Expr:  &rel.BindParam{Value: args[0]},
+	q.whereClause = append(q.whereClause, &rel.Literal{
+		Text:   query,
+		Params: args,
 	})
-
-	for i := 1; i < len(args); i += 2 {
-		q.whereClause = append(q.whereClause, &rel.Equality{
-			Field: args[i].(string),
-			Expr:  &rel.BindParam{Value: args[i+1]},
-		})
-	}
 
 	return q
 }
@@ -824,7 +794,7 @@ func (q *postRelation) Take(ctx context.Context) (*Post, error) {
 }
 
 func (q *postRelation) Find(ctx context.Context, id int64) (*Post, error) {
-	return q.FindBy(ctx, "id", id)
+	return q.FindBy(ctx, "id = ?", id)
 }
 
 func (q *postRelation) FindBy(ctx context.Context, query string, args ...interface{}) (*Post, error) {
@@ -832,42 +802,19 @@ func (q *postRelation) FindBy(ctx context.Context, query string, args ...interfa
 }
 
 func (q *postRelation) First(ctx context.Context) (*Post, error) {
-	return q.Order("id", "ASC").Take(ctx)
+	return q.Order("id ASC").Take(ctx)
 }
 
 func (q *postRelation) Last(ctx context.Context) (*Post, error) {
-	return q.Order("id", "DESC").Take(ctx)
+	return q.Order("id DESC").Take(ctx)
 }
 
 func (q *postRelation) Order(query string, args ...string) PostRelation {
-	if len(args) == 0 {
-		args = []string{"ASC"}
-	}
+	q.orderValues = append(q.orderValues, &rel.Literal{Text: query})
 
-	if len(args)%2 != 1 {
-		panic("invalid where call")
-	}
-
-	q.orderValues = append(q.orderValues, orderDirection(&rel.Literal{Value: query}, args[0]))
-
-	for i := 1; i < len(args); i += 2 {
-		q.orderValues = append(q.orderValues, orderDirection(&rel.Literal{Value: args[i]}, args[i+1]))
+	for i := 0; i < len(args); i++ {
+		q.orderValues = append(q.orderValues, &rel.Literal{Text: args[i]})
 	}
 
 	return q
-}
-
-func orderDirection(e rel.Expr, direction string) rel.Expr {
-	switch direction {
-	case "ASC", "asc":
-		return &rel.Ascending{
-			Expr: e,
-		}
-	case "DESC", "desc":
-		return &rel.Descending{
-			Expr: e,
-		}
-	}
-
-	panic("fail")
 }
