@@ -13,7 +13,7 @@ import (
 func TestEmptyUser(t *testing.T) {
 	user, err := db.Users().First(ctx)
 
-	require.NoError(t, err)
+	require.EqualError(t, err, "not found")
 	require.Nil(t, user)
 }
 

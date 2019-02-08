@@ -11,6 +11,8 @@ import (
 	"bou.ke/orm/rel"
 )
 
+var ErrNotFound error = errors.New("not found")
+
 type UserFields struct {
 	// ID ...
 	ID int64
@@ -393,7 +395,7 @@ func (q *userRelation) Take(ctx context.Context) (*User, error) {
 	}
 
 	if len(os) == 0 {
-		return nil, nil
+		return nil, ErrNotFound
 	}
 
 	return os[0], nil
@@ -815,7 +817,7 @@ func (q *postRelation) Take(ctx context.Context) (*Post, error) {
 	}
 
 	if len(os) == 0 {
-		return nil, nil
+		return nil, ErrNotFound
 	}
 
 	return os[0], nil

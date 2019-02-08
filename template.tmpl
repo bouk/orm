@@ -10,6 +10,9 @@ import (
 	"bou.ke/ctxdb"
 	"bou.ke/orm/rel"
 )
+
+var ErrNotFound error = errors.New("not found")
+
 {{range .Tables}}
 type {{.StructName}}Fields struct { {{range .Columns}}
 	// {{.FieldName}} ...
@@ -358,7 +361,7 @@ func (q *{{.Singular}}Relation) Take(ctx context.Context) (*{{.StructName}}, err
   }
 
   if len(os) == 0 {
-    return nil, nil
+    return nil, ErrNotFound
   }
 
   return os[0], nil
