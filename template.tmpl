@@ -109,8 +109,7 @@ func (o *{{.StructName}}) Save(ctx context.Context) error {
     }
 	}
 
-  {{range .Columns}}
-  o.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
+  o.old = o.{{.StructName}}Fields
 
   return nil
 }
@@ -338,8 +337,7 @@ func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, er
 		o := &{{.StructName}}{}
 		*o = *row
 
-    {{range .Columns}}
-    o.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
+    o.old = o.{{.StructName}}Fields
 
 		{{.Name}} = append({{.Name}}, o)
 	}

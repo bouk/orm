@@ -131,9 +131,7 @@ func (o *User) Save(ctx context.Context) error {
 		}
 	}
 
-	o.old.ID = o.ID
-	o.old.FirstName = o.FirstName
-	o.old.LastName = o.LastName
+	o.old = o.UserFields
 
 	return nil
 }
@@ -371,9 +369,7 @@ func (q *userRelation) All(ctx context.Context) ([]*User, error) {
 		o := &User{}
 		*o = *row
 
-		o.old.ID = o.ID
-		o.old.FirstName = o.FirstName
-		o.old.LastName = o.LastName
+		o.old = o.UserFields
 
 		users = append(users, o)
 	}
@@ -529,9 +525,7 @@ func (o *Post) Save(ctx context.Context) error {
 		}
 	}
 
-	o.old.ID = o.ID
-	o.old.UserID = o.UserID
-	o.old.Body = o.Body
+	o.old = o.PostFields
 
 	return nil
 }
@@ -769,9 +763,7 @@ func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
 		o := &Post{}
 		*o = *row
 
-		o.old.ID = o.ID
-		o.old.UserID = o.UserID
-		o.old.Body = o.Body
+		o.old = o.PostFields
 
 		posts = append(posts, o)
 	}
