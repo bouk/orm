@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+  "regexp"
 
   "github.com/pkg/errors"
 
@@ -12,6 +13,8 @@ import (
 )
 
 var ErrNotFound error = errors.New("not found")
+
+var assignRe = regexp.MustCompile(`^(\w+)\s*=\s*\?$`)
 
 type Relation interface {
 	// Count ...
@@ -41,7 +44,7 @@ type {{.StructName}} struct {
 }
 {{$table := .}}{{range .HasMany}}
 func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
-	return {{.RelationName}}().Where("{{$table.Singular}}_id", o.ID)
+	return {{.RelationName}}().Where("{{$table.Singular}}_id = ?", o.ID)
 }
 {{end}}
 {{$table := .}}{{range .BelongsTo}}
@@ -115,7 +118,7 @@ func (o *{{.StructName}}) Save(ctx context.Context) error {
 }
 
 func (o *{{.StructName}}) Delete(ctx context.Context) error {
-	_, err := {{.RelationName}}().Where("id", o.ID).DeleteAll(ctx)
+	_, err := {{.RelationName}}().Where("id = ?", o.ID).DeleteAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -264,10 +267,19 @@ func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context) (int64, error) {
 }
 
 func (q *{{.Singular}}Relation) Where(query string, args ...interface{}) {{.StructName}}Relation {
-	q.whereClause = append(q.whereClause, &rel.Literal{
-		Text: query,
-		Params: args,
-	})
+  // TODO(bouk): only supports sketchy regexp parsing right now
+  match := assignRe.FindStringSubmatch(query)
+  // TODO(bouk): return error relation
+  if match == nil || len(args) != 1 {
+    panic("dunno what to do with this query: " + query)
+  }
+
+  q.whereClause = append(q.whereClause, &rel.Equality{
+    Field: match[1],
+    Expr: &rel.BindParam{
+      Value: args[0],
+    },
+  })
 
 	return q
 }

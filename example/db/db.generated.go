@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 
 	"github.com/pkg/errors"
 
@@ -12,6 +13,8 @@ import (
 )
 
 var ErrNotFound error = errors.New("not found")
+
+var assignRe = regexp.MustCompile(`^(\w+)\s*=\s*\?$`)
 
 type Relation interface {
 	// Count ...
@@ -45,7 +48,7 @@ type User struct {
 }
 
 func (o *User) Posts() PostRelation {
-	return Posts().Where("user_id", o.ID)
+	return Posts().Where("user_id = ?", o.ID)
 }
 
 func (o *User) Save(ctx context.Context) error {
@@ -137,7 +140,7 @@ func (o *User) Save(ctx context.Context) error {
 }
 
 func (o *User) Delete(ctx context.Context) error {
-	_, err := Users().Where("id", o.ID).DeleteAll(ctx)
+	_, err := Users().Where("id = ?", o.ID).DeleteAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -294,9 +297,18 @@ func (q *userRelation) DeleteAll(ctx context.Context) (int64, error) {
 }
 
 func (q *userRelation) Where(query string, args ...interface{}) UserRelation {
-	q.whereClause = append(q.whereClause, &rel.Literal{
-		Text:   query,
-		Params: args,
+	// TODO(bouk): only supports sketchy regexp parsing right now
+	match := assignRe.FindStringSubmatch(query)
+	// TODO(bouk): return error relation
+	if match == nil || len(args) != 1 {
+		panic("dunno what to do with this query: " + query)
+	}
+
+	q.whereClause = append(q.whereClause, &rel.Equality{
+		Field: match[1],
+		Expr: &rel.BindParam{
+			Value: args[0],
+		},
 	})
 
 	return q
@@ -531,7 +543,7 @@ func (o *Post) Save(ctx context.Context) error {
 }
 
 func (o *Post) Delete(ctx context.Context) error {
-	_, err := Posts().Where("id", o.ID).DeleteAll(ctx)
+	_, err := Posts().Where("id = ?", o.ID).DeleteAll(ctx)
 	if err != nil {
 		return err
 	}
@@ -688,9 +700,18 @@ func (q *postRelation) DeleteAll(ctx context.Context) (int64, error) {
 }
 
 func (q *postRelation) Where(query string, args ...interface{}) PostRelation {
-	q.whereClause = append(q.whereClause, &rel.Literal{
-		Text:   query,
-		Params: args,
+	// TODO(bouk): only supports sketchy regexp parsing right now
+	match := assignRe.FindStringSubmatch(query)
+	// TODO(bouk): return error relation
+	if match == nil || len(args) != 1 {
+		panic("dunno what to do with this query: " + query)
+	}
+
+	q.whereClause = append(q.whereClause, &rel.Equality{
+		Field: match[1],
+		Expr: &rel.BindParam{
+			Value: args[0],
+		},
 	})
 
 	return q
