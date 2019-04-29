@@ -8,9 +8,20 @@ import (
 
 	"github.com/pkg/errors"
 
-	"bou.ke/ctxdb"
 	"bou.ke/orm/rel"
 )
+
+// Databaser is a general interface for sql.Conn, sql.DB, and sql.Tx
+type Databaser interface {
+	// ExecContext executes a query without returning any rows. The args are for any placeholder parameters in the query.
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+
+	// QueryContext executes a query that returns rows, typically a SELECT. The args are for any placeholder parameters in the query.
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+
+	// QueryRowContext executes a query that is expected to return at most one row. QueryRowContext always returns a non-nil value. Errors are deferred until Row's Scan method is called. If the query selects no rows, the *Row's Scan will return ErrNoRows. Otherwise, the *Row's Scan scans the first selected row and discards the rest.
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
 
 var ErrNotFound error = errors.New("not found")
 
@@ -18,12 +29,12 @@ var assignRe = regexp.MustCompile(`^(\w+)\s*=\s*\?$`)
 
 type Relation interface {
 	// Count ...
-	Count(ctx context.Context) (int64, error)
+	Count(ctx context.Context, db Databaser) (int64, error)
 
 	// DeleteAll ...
-	DeleteAll(ctx context.Context) (int64, error)
+	DeleteAll(ctx context.Context, db Databaser) (int64, error)
 
-	// TODO: UpdateAll(ctx context.Context, query string, args ...interface{}) error
+	// TODO: UpdateAll(ctx context.Context, db Databaser, query string, args ...interface{}) error
 }
 
 type UserFields struct {
@@ -51,7 +62,7 @@ func (o *User) Posts() PostRelation {
 	return Posts().Where("user_id = ?", o.ID)
 }
 
-func (o *User) Save(ctx context.Context) error {
+func (o *User) Save(ctx context.Context, db Databaser) error {
 	if o.deleted {
 		return fmt.Errorf("record deleted")
 	}
@@ -95,7 +106,7 @@ func (o *User) Save(ctx context.Context) error {
 		}
 
 		query, values := stmt.Build()
-		_, err := ctxdb.Exec(ctx, query, values...)
+		_, err := db.ExecContext(ctx, query, values...)
 		if err != nil {
 			return errors.Wrapf(err, "executing %q", query)
 		}
@@ -120,7 +131,7 @@ func (o *User) Save(ctx context.Context) error {
 		})
 
 		query, values := stmt.Build()
-		res, err := ctxdb.Exec(ctx, query, values...)
+		res, err := db.ExecContext(ctx, query, values...)
 		if err != nil {
 			return errors.Wrapf(err, "executing %q", query)
 		}
@@ -139,8 +150,8 @@ func (o *User) Save(ctx context.Context) error {
 	return nil
 }
 
-func (o *User) Delete(ctx context.Context) error {
-	_, err := Users().Where("id = ?", o.ID).DeleteAll(ctx)
+func (o *User) Delete(ctx context.Context, db Databaser) error {
+	_, err := Users().Where("id = ?", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -192,21 +203,21 @@ type UserRelation interface {
 	Relation
 
 	// All ...
-	All(ctx context.Context) ([]*User, error)
+	All(ctx context.Context, db Databaser) ([]*User, error)
 
-	// TODO: Create(ctx context.Context, query string, args ...interface{}) (*User, error)
+	// TODO: Create(ctx context.Context, db Databaser, query string, args ...interface{}) (*User, error)
 
 	// Find ...
-	Find(ctx context.Context, id int64) (*User, error)
+	Find(ctx context.Context, db Databaser, id int64) (*User, error)
 
 	// FindBy ...
-	FindBy(ctx context.Context, query string, args ...interface{}) (*User, error)
+	FindBy(ctx context.Context, db Databaser, query string, args ...interface{}) (*User, error)
 
 	// First ...
-	First(ctx context.Context) (*User, error)
+	First(ctx context.Context, db Databaser) (*User, error)
 
 	// Last ...
-	Last(ctx context.Context) (*User, error)
+	Last(ctx context.Context, db Databaser) (*User, error)
 
 	// Limit ...
 	Limit(limit int64) UserRelation
@@ -224,7 +235,7 @@ type UserRelation interface {
 	Select(fields ...string) UserRelation
 
 	// Take ...
-	Take(ctx context.Context) (*User, error)
+	Take(ctx context.Context, db Databaser) (*User, error)
 
 	// Where ...
 	Where(query string, args ...interface{}) UserRelation
@@ -244,7 +255,43 @@ type userRelation struct {
 	offset      int64
 }
 
-func (q *userRelation) buildQuery(fields []string) (query string, args []interface{}) {
+func userFindBySQL(ctx context.Context, db Databaser, query string, args ...interface{}) ([]*User, error) {
+	var users []*User
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	row := &User{}
+	row.persisted = true
+	fields, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	ptrs, err := row.pointersForFields(fields)
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+
+		o := &User{}
+		*o = *row
+
+		o.old = o.UserFields
+
+		users = append(users, o)
+	}
+
+	return users, rows.Err()
+}
+
+func (q *userRelation) buildQuery() (query string, args []interface{}) {
+	fields := q.columnFields()
 	columns := make([]rel.Expr, 0, len(fields))
 	for _, field := range fields {
 		columns = append(columns, &rel.Literal{Text: field})
@@ -260,28 +307,17 @@ func (q *userRelation) buildQuery(fields []string) (query string, args []interfa
 	return s.Build()
 }
 
-func (q *userRelation) queryRow(ctx context.Context, dest ...interface{}) error {
-	fields := q.columnFields()
-	query, args := q.buildQuery(fields)
-
-	return ctxdb.QueryRow(ctx, query, args...).Scan(dest...)
-}
-
-func (q *userRelation) query(ctx context.Context) (*sql.Rows, error) {
-	fields := q.columnFields()
-	query, args := q.buildQuery(fields)
-
-	return ctxdb.Query(ctx, query, args...)
-}
-
-func (q *userRelation) Count(ctx context.Context) (int64, error) {
+func (q *userRelation) Count(ctx context.Context, db Databaser) (int64, error) {
 	var count int64
 	q.fields = []string{"COUNT(*)"}
-	err := q.queryRow(ctx, &count)
+
+	query, args := q.buildQuery()
+	err := db.QueryRowContext(ctx, query, args...).Scan(&count)
+
 	return count, err
 }
 
-func (q *userRelation) DeleteAll(ctx context.Context) (int64, error) {
+func (q *userRelation) DeleteAll(ctx context.Context, db Databaser) (int64, error) {
 	s := rel.DeleteStatement{
 		Table:  "users",
 		Wheres: q.whereClause,
@@ -289,7 +325,7 @@ func (q *userRelation) DeleteAll(ctx context.Context) (int64, error) {
 
 	query, args := s.Build()
 
-	res, err := ctxdb.Exec(ctx, query, args...)
+	res, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -354,44 +390,14 @@ func (q *userRelation) columnFields() []string {
 	}
 }
 
-func (q *userRelation) All(ctx context.Context) ([]*User, error) {
-	var users []*User
-	rows, err := q.query(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	row := &User{}
-	row.persisted = true
-	fields, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-	ptrs, err := row.pointersForFields(fields)
-	if err != nil {
-		return nil, err
-	}
-
-	for rows.Next() {
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
-		}
-
-		o := &User{}
-		*o = *row
-
-		o.old = o.UserFields
-
-		users = append(users, o)
-	}
-
-	return users, rows.Err()
+func (q *userRelation) All(ctx context.Context, db Databaser) ([]*User, error) {
+	query, args := q.buildQuery()
+	return userFindBySQL(ctx, db, query, args...)
 }
 
-func (q *userRelation) Take(ctx context.Context) (*User, error) {
+func (q *userRelation) Take(ctx context.Context, db Databaser) (*User, error) {
 	q.limit = 1
-	os, err := q.All(ctx)
+	os, err := q.All(ctx, db)
 	if err != nil {
 		return nil, err
 	}
@@ -403,20 +409,20 @@ func (q *userRelation) Take(ctx context.Context) (*User, error) {
 	return os[0], nil
 }
 
-func (q *userRelation) Find(ctx context.Context, id int64) (*User, error) {
-	return q.FindBy(ctx, "id = ?", id)
+func (q *userRelation) Find(ctx context.Context, db Databaser, id int64) (*User, error) {
+	return q.FindBy(ctx, db, "id = ?", id)
 }
 
-func (q *userRelation) FindBy(ctx context.Context, query string, args ...interface{}) (*User, error) {
-	return q.Where(query, args...).Take(ctx)
+func (q *userRelation) FindBy(ctx context.Context, db Databaser, query string, args ...interface{}) (*User, error) {
+	return q.Where(query, args...).Take(ctx, db)
 }
 
-func (q *userRelation) First(ctx context.Context) (*User, error) {
-	return q.Order("id ASC").Take(ctx)
+func (q *userRelation) First(ctx context.Context, db Databaser) (*User, error) {
+	return q.Order("id ASC").Take(ctx, db)
 }
 
-func (q *userRelation) Last(ctx context.Context) (*User, error) {
-	return q.Order("id DESC").Take(ctx)
+func (q *userRelation) Last(ctx context.Context, db Databaser) (*User, error) {
+	return q.Order("id DESC").Take(ctx, db)
 }
 
 func (q *userRelation) Order(query string, args ...string) UserRelation {
@@ -450,11 +456,11 @@ type Post struct {
 	old PostFields
 }
 
-func (o *Post) User(ctx context.Context) (*User, error) {
-	return Users().Find(ctx, o.UserID)
+func (o *Post) User(ctx context.Context, db Databaser) (*User, error) {
+	return Users().Find(ctx, db, o.UserID)
 }
 
-func (o *Post) Save(ctx context.Context) error {
+func (o *Post) Save(ctx context.Context, db Databaser) error {
 	if o.deleted {
 		return fmt.Errorf("record deleted")
 	}
@@ -498,7 +504,7 @@ func (o *Post) Save(ctx context.Context) error {
 		}
 
 		query, values := stmt.Build()
-		_, err := ctxdb.Exec(ctx, query, values...)
+		_, err := db.ExecContext(ctx, query, values...)
 		if err != nil {
 			return errors.Wrapf(err, "executing %q", query)
 		}
@@ -523,7 +529,7 @@ func (o *Post) Save(ctx context.Context) error {
 		})
 
 		query, values := stmt.Build()
-		res, err := ctxdb.Exec(ctx, query, values...)
+		res, err := db.ExecContext(ctx, query, values...)
 		if err != nil {
 			return errors.Wrapf(err, "executing %q", query)
 		}
@@ -542,8 +548,8 @@ func (o *Post) Save(ctx context.Context) error {
 	return nil
 }
 
-func (o *Post) Delete(ctx context.Context) error {
-	_, err := Posts().Where("id = ?", o.ID).DeleteAll(ctx)
+func (o *Post) Delete(ctx context.Context, db Databaser) error {
+	_, err := Posts().Where("id = ?", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -595,21 +601,21 @@ type PostRelation interface {
 	Relation
 
 	// All ...
-	All(ctx context.Context) ([]*Post, error)
+	All(ctx context.Context, db Databaser) ([]*Post, error)
 
-	// TODO: Create(ctx context.Context, query string, args ...interface{}) (*Post, error)
+	// TODO: Create(ctx context.Context, db Databaser, query string, args ...interface{}) (*Post, error)
 
 	// Find ...
-	Find(ctx context.Context, id int64) (*Post, error)
+	Find(ctx context.Context, db Databaser, id int64) (*Post, error)
 
 	// FindBy ...
-	FindBy(ctx context.Context, query string, args ...interface{}) (*Post, error)
+	FindBy(ctx context.Context, db Databaser, query string, args ...interface{}) (*Post, error)
 
 	// First ...
-	First(ctx context.Context) (*Post, error)
+	First(ctx context.Context, db Databaser) (*Post, error)
 
 	// Last ...
-	Last(ctx context.Context) (*Post, error)
+	Last(ctx context.Context, db Databaser) (*Post, error)
 
 	// Limit ...
 	Limit(limit int64) PostRelation
@@ -627,7 +633,7 @@ type PostRelation interface {
 	Select(fields ...string) PostRelation
 
 	// Take ...
-	Take(ctx context.Context) (*Post, error)
+	Take(ctx context.Context, db Databaser) (*Post, error)
 
 	// Where ...
 	Where(query string, args ...interface{}) PostRelation
@@ -647,7 +653,43 @@ type postRelation struct {
 	offset      int64
 }
 
-func (q *postRelation) buildQuery(fields []string) (query string, args []interface{}) {
+func postFindBySQL(ctx context.Context, db Databaser, query string, args ...interface{}) ([]*Post, error) {
+	var posts []*Post
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	row := &Post{}
+	row.persisted = true
+	fields, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	ptrs, err := row.pointersForFields(fields)
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+
+		o := &Post{}
+		*o = *row
+
+		o.old = o.PostFields
+
+		posts = append(posts, o)
+	}
+
+	return posts, rows.Err()
+}
+
+func (q *postRelation) buildQuery() (query string, args []interface{}) {
+	fields := q.columnFields()
 	columns := make([]rel.Expr, 0, len(fields))
 	for _, field := range fields {
 		columns = append(columns, &rel.Literal{Text: field})
@@ -663,28 +705,17 @@ func (q *postRelation) buildQuery(fields []string) (query string, args []interfa
 	return s.Build()
 }
 
-func (q *postRelation) queryRow(ctx context.Context, dest ...interface{}) error {
-	fields := q.columnFields()
-	query, args := q.buildQuery(fields)
-
-	return ctxdb.QueryRow(ctx, query, args...).Scan(dest...)
-}
-
-func (q *postRelation) query(ctx context.Context) (*sql.Rows, error) {
-	fields := q.columnFields()
-	query, args := q.buildQuery(fields)
-
-	return ctxdb.Query(ctx, query, args...)
-}
-
-func (q *postRelation) Count(ctx context.Context) (int64, error) {
+func (q *postRelation) Count(ctx context.Context, db Databaser) (int64, error) {
 	var count int64
 	q.fields = []string{"COUNT(*)"}
-	err := q.queryRow(ctx, &count)
+
+	query, args := q.buildQuery()
+	err := db.QueryRowContext(ctx, query, args...).Scan(&count)
+
 	return count, err
 }
 
-func (q *postRelation) DeleteAll(ctx context.Context) (int64, error) {
+func (q *postRelation) DeleteAll(ctx context.Context, db Databaser) (int64, error) {
 	s := rel.DeleteStatement{
 		Table:  "posts",
 		Wheres: q.whereClause,
@@ -692,7 +723,7 @@ func (q *postRelation) DeleteAll(ctx context.Context) (int64, error) {
 
 	query, args := s.Build()
 
-	res, err := ctxdb.Exec(ctx, query, args...)
+	res, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -757,44 +788,14 @@ func (q *postRelation) columnFields() []string {
 	}
 }
 
-func (q *postRelation) All(ctx context.Context) ([]*Post, error) {
-	var posts []*Post
-	rows, err := q.query(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	row := &Post{}
-	row.persisted = true
-	fields, err := rows.Columns()
-	if err != nil {
-		return nil, err
-	}
-	ptrs, err := row.pointersForFields(fields)
-	if err != nil {
-		return nil, err
-	}
-
-	for rows.Next() {
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
-		}
-
-		o := &Post{}
-		*o = *row
-
-		o.old = o.PostFields
-
-		posts = append(posts, o)
-	}
-
-	return posts, rows.Err()
+func (q *postRelation) All(ctx context.Context, db Databaser) ([]*Post, error) {
+	query, args := q.buildQuery()
+	return postFindBySQL(ctx, db, query, args...)
 }
 
-func (q *postRelation) Take(ctx context.Context) (*Post, error) {
+func (q *postRelation) Take(ctx context.Context, db Databaser) (*Post, error) {
 	q.limit = 1
-	os, err := q.All(ctx)
+	os, err := q.All(ctx, db)
 	if err != nil {
 		return nil, err
 	}
@@ -806,20 +807,20 @@ func (q *postRelation) Take(ctx context.Context) (*Post, error) {
 	return os[0], nil
 }
 
-func (q *postRelation) Find(ctx context.Context, id int64) (*Post, error) {
-	return q.FindBy(ctx, "id = ?", id)
+func (q *postRelation) Find(ctx context.Context, db Databaser, id int64) (*Post, error) {
+	return q.FindBy(ctx, db, "id = ?", id)
 }
 
-func (q *postRelation) FindBy(ctx context.Context, query string, args ...interface{}) (*Post, error) {
-	return q.Where(query, args...).Take(ctx)
+func (q *postRelation) FindBy(ctx context.Context, db Databaser, query string, args ...interface{}) (*Post, error) {
+	return q.Where(query, args...).Take(ctx, db)
 }
 
-func (q *postRelation) First(ctx context.Context) (*Post, error) {
-	return q.Order("id ASC").Take(ctx)
+func (q *postRelation) First(ctx context.Context, db Databaser) (*Post, error) {
+	return q.Order("id ASC").Take(ctx, db)
 }
 
-func (q *postRelation) Last(ctx context.Context) (*Post, error) {
-	return q.Order("id DESC").Take(ctx)
+func (q *postRelation) Last(ctx context.Context, db Databaser) (*Post, error) {
+	return q.Order("id DESC").Take(ctx, db)
 }
 
 func (q *postRelation) Order(query string, args ...string) PostRelation {

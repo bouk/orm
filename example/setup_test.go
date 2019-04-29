@@ -2,19 +2,22 @@ package example
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
 
-	"bou.ke/ctxdb"
 	"bou.ke/tempdb/sqlite3"
 )
 
-var ctx context.Context
+var d *sql.DB
+var ctx = context.Background()
 
 func TestMain(m *testing.M) {
-	db, c, err := sqlite3.New()
+	var c func()
+	var err error
+	d, c, err = sqlite3.New()
 	if err != nil {
 		fmt.Printf("Failed to setup test DB: %v\n", err)
 		os.Exit(1)
@@ -25,12 +28,11 @@ func TestMain(m *testing.M) {
 		fmt.Printf("Failed to read migration: %v\n", err)
 		os.Exit(3)
 	}
-	_, err = db.Exec(string(migration))
+	_, err = d.Exec(string(migration))
 	if err != nil {
 		fmt.Printf("Failed to run setup SQL: %v\n", err)
 		os.Exit(2)
 	}
 
-	ctx = ctxdb.With(context.Background(), db)
 	os.Exit(m.Run())
 }

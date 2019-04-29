@@ -8,9 +8,20 @@ import (
 
   "github.com/pkg/errors"
 
-	"bou.ke/ctxdb"
 	"bou.ke/orm/rel"
 )
+
+// Databaser is a general interface for sql.Conn, sql.DB, and sql.Tx
+type Databaser interface {
+	// ExecContext executes a query without returning any rows. The args are for any placeholder parameters in the query.
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+
+	// QueryContext executes a query that returns rows, typically a SELECT. The args are for any placeholder parameters in the query.
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+
+	// QueryRowContext executes a query that is expected to return at most one row. QueryRowContext always returns a non-nil value. Errors are deferred until Row's Scan method is called. If the query selects no rows, the *Row's Scan will return ErrNoRows. Otherwise, the *Row's Scan scans the first selected row and discards the rest.
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
 
 var ErrNotFound error = errors.New("not found")
 
@@ -18,12 +29,12 @@ var assignRe = regexp.MustCompile(`^(\w+)\s*=\s*\?$`)
 
 type Relation interface {
 	// Count ...
-	Count(ctx context.Context) (int64, error)
+	Count(ctx context.Context, db Databaser) (int64, error)
 
 	// DeleteAll ...
-	DeleteAll(ctx context.Context) (int64, error)
+	DeleteAll(ctx context.Context, db Databaser) (int64, error)
 
-  // TODO: UpdateAll(ctx context.Context, query string, args ...interface{}) error
+  // TODO: UpdateAll(ctx context.Context, db Databaser, query string, args ...interface{}) error
 }
 
 {{range .Tables}}
@@ -48,12 +59,12 @@ func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
 }
 {{end}}
 {{$table := .}}{{range .BelongsTo}}
-func (o *{{$table.StructName}}) {{.StructName}}(ctx context.Context) (*{{.StructName}}, error) {
-	return {{.RelationName}}().Find(ctx, o.{{.StructName}}ID)
+func (o *{{$table.StructName}}) {{.StructName}}(ctx context.Context, db Databaser) (*{{.StructName}}, error) {
+	return {{.RelationName}}().Find(ctx, db, o.{{.StructName}}ID)
 }
 {{end}}
 
-func (o *{{.StructName}}) Save(ctx context.Context) error {
+func (o *{{.StructName}}) Save(ctx context.Context, db Databaser) error {
   if o.deleted {
     return fmt.Errorf("record deleted")
   }
@@ -81,7 +92,7 @@ func (o *{{.StructName}}) Save(ctx context.Context) error {
 {{end}}
 
 		query, values := stmt.Build()
-		_, err := ctxdb.Exec(ctx, query, values...)
+		_, err := db.ExecContext(ctx, query, values...)
 		if err != nil {
 			return errors.Wrapf(err, "executing %q", query)
 		}
@@ -98,7 +109,7 @@ func (o *{{.StructName}}) Save(ctx context.Context) error {
     }{{end}}{{end}}
 
 		query, values := stmt.Build()
-		res, err := ctxdb.Exec(ctx, query, values...)
+		res, err := db.ExecContext(ctx, query, values...)
 		if err != nil {
 			return errors.Wrapf(err, "executing %q", query)
 		}
@@ -117,8 +128,8 @@ func (o *{{.StructName}}) Save(ctx context.Context) error {
   return nil
 }
 
-func (o *{{.StructName}}) Delete(ctx context.Context) error {
-	_, err := {{.RelationName}}().Where("id = ?", o.ID).DeleteAll(ctx)
+func (o *{{.StructName}}) Delete(ctx context.Context, db Databaser) error {
+	_, err := {{.RelationName}}().Where("id = ?", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -162,21 +173,21 @@ type {{.StructName}}Relation interface {
   Relation
 
   // All ...
-	All(ctx context.Context) ([]*{{.StructName}}, error)
+	All(ctx context.Context, db Databaser) ([]*{{.StructName}}, error)
 
-  // TODO: Create(ctx context.Context, query string, args ...interface{}) (*{{.StructName}}, error)
+  // TODO: Create(ctx context.Context, db Databaser, query string, args ...interface{}) (*{{.StructName}}, error)
 
   // Find ...
-	Find(ctx context.Context, id int64) (*{{.StructName}}, error)
+	Find(ctx context.Context, db Databaser, id int64) (*{{.StructName}}, error)
 
   // FindBy ...
-	FindBy(ctx context.Context, query string, args ...interface{}) (*{{.StructName}}, error)
+	FindBy(ctx context.Context, db Databaser, query string, args ...interface{}) (*{{.StructName}}, error)
 
   // First ...
-	First(ctx context.Context) (*{{.StructName}}, error)
+	First(ctx context.Context, db Databaser) (*{{.StructName}}, error)
 
   // Last ...
-	Last(ctx context.Context) (*{{.StructName}}, error)
+	Last(ctx context.Context, db Databaser) (*{{.StructName}}, error)
 
   // Limit ...
 	Limit(limit int64) {{.StructName}}Relation
@@ -194,7 +205,7 @@ type {{.StructName}}Relation interface {
 	Select(fields ...string) {{.StructName}}Relation
 
   // Take ...
-	Take(ctx context.Context) (*{{.StructName}}, error)
+	Take(ctx context.Context, db Databaser) (*{{.StructName}}, error)
 
   // Where ...
 	Where(query string, args ...interface{}) {{.StructName}}Relation
@@ -214,7 +225,43 @@ type {{.Singular}}Relation struct {
 	offset      int64
 }
 
-func (q *{{.Singular}}Relation) buildQuery(fields []string) (query string, args []interface{}) {
+func {{.Singular}}FindBySQL(ctx context.Context, db Databaser, query string, args ...interface{}) ([]*{{.StructName}}, error) {
+	var {{.Name}} []*{{.StructName}}
+  rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	row := &{{.StructName}}{}
+  row.persisted = true
+  fields, err := rows.Columns()
+  if err != nil {
+    return nil, err
+  }
+	ptrs, err := row.pointersForFields(fields)
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+
+		o := &{{.StructName}}{}
+		*o = *row
+
+    o.old = o.{{.StructName}}Fields
+
+		{{.Name}} = append({{.Name}}, o)
+	}
+
+	return {{.Name}}, rows.Err()
+}
+
+func (q *{{.Singular}}Relation) buildQuery() (query string, args []interface{}) {
+	fields := q.columnFields()
 	columns := make([]rel.Expr, 0, len(fields))
 	for _, field := range fields {
 		columns = append(columns, &rel.Literal{Text: field})
@@ -230,28 +277,17 @@ func (q *{{.Singular}}Relation) buildQuery(fields []string) (query string, args 
 	return s.Build()
 }
 
-func (q *{{.Singular}}Relation) queryRow(ctx context.Context, dest ...interface{}) error {
-	fields := q.columnFields()
-	query, args := q.buildQuery(fields)
-
-	return ctxdb.QueryRow(ctx, query, args...).Scan(dest...)
-}
-
-func (q *{{.Singular}}Relation) query(ctx context.Context) (*sql.Rows, error) {
-	fields := q.columnFields()
-	query, args := q.buildQuery(fields)
-
-	return ctxdb.Query(ctx, query, args...)
-}
-
-func (q *{{.Singular}}Relation) Count(ctx context.Context) (int64, error) {
+func (q *{{.Singular}}Relation) Count(ctx context.Context, db Databaser) (int64, error) {
 	var count int64
   q.fields = []string{"COUNT(*)"}
-  err := q.queryRow(ctx, &count)
+
+	query, args := q.buildQuery()
+	err := db.QueryRowContext(ctx, query, args...).Scan(&count)
+
 	return count, err
 }
 
-func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context) (int64, error) {
+func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context, db Databaser) (int64, error) {
 	s := rel.DeleteStatement{
 		Table:   "{{.Name}}",
 		Wheres:  q.whereClause,
@@ -259,7 +295,7 @@ func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context) (int64, error) {
 
 	query, args := s.Build()
 
-  res, err := ctxdb.Exec(ctx, query, args...)
+  res, err := db.ExecContext(ctx, query, args...)
   if err != nil {
 		return 0, err
   }
@@ -322,44 +358,14 @@ func (q *{{.Singular}}Relation) columnFields() []string {
 	}
 }
 
-func (q *{{.Singular}}Relation) All(ctx context.Context) ([]*{{.StructName}}, error) {
-	var {{.Name}} []*{{.StructName}}
-	rows, err := q.query(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	row := &{{.StructName}}{}
-  row.persisted = true
-  fields, err := rows.Columns()
-  if err != nil {
-    return nil, err
-  }
-	ptrs, err := row.pointersForFields(fields)
-	if err != nil {
-		return nil, err
-	}
-
-	for rows.Next() {
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
-		}
-
-		o := &{{.StructName}}{}
-		*o = *row
-
-    o.old = o.{{.StructName}}Fields
-
-		{{.Name}} = append({{.Name}}, o)
-	}
-
-	return {{.Name}}, rows.Err()
+func (q *{{.Singular}}Relation) All(ctx context.Context, db Databaser) ([]*{{.StructName}}, error) {
+  query, args := q.buildQuery()
+  return {{.Singular}}FindBySQL(ctx, db, query, args...)
 }
 
-func (q *{{.Singular}}Relation) Take(ctx context.Context) (*{{.StructName}}, error) {
+func (q *{{.Singular}}Relation) Take(ctx context.Context, db Databaser) (*{{.StructName}}, error) {
   q.limit = 1
-  os, err := q.All(ctx)
+  os, err := q.All(ctx, db)
   if err != nil {
     return nil, err
   }
@@ -371,20 +377,20 @@ func (q *{{.Singular}}Relation) Take(ctx context.Context) (*{{.StructName}}, err
   return os[0], nil
 }
 
-func (q *{{.Singular}}Relation) Find(ctx context.Context, id int64) (*{{.StructName}}, error) {
-	return q.FindBy(ctx, "id = ?", id)
+func (q *{{.Singular}}Relation) Find(ctx context.Context, db Databaser, id int64) (*{{.StructName}}, error) {
+	return q.FindBy(ctx, db, "id = ?", id)
 }
 
-func (q *{{.Singular}}Relation) FindBy(ctx context.Context, query string, args ...interface{}) (*{{.StructName}}, error) {
-	return q.Where(query, args...).Take(ctx)
+func (q *{{.Singular}}Relation) FindBy(ctx context.Context, db Databaser, query string, args ...interface{}) (*{{.StructName}}, error) {
+	return q.Where(query, args...).Take(ctx, db)
 }
 
-func (q *{{.Singular}}Relation) First(ctx context.Context) (*{{.StructName}}, error) {
-	return q.Order("id ASC").Take(ctx)
+func (q *{{.Singular}}Relation) First(ctx context.Context, db Databaser) (*{{.StructName}}, error) {
+	return q.Order("id ASC").Take(ctx, db)
 }
 
-func (q *{{.Singular}}Relation) Last(ctx context.Context) (*{{.StructName}}, error) {
-	return q.Order("id DESC").Take(ctx)
+func (q *{{.Singular}}Relation) Last(ctx context.Context, db Databaser) (*{{.StructName}}, error) {
+	return q.Order("id DESC").Take(ctx, db)
 }
 
 func (q *{{.Singular}}Relation) Order(query string, args ...string) {{.StructName}}Relation {
