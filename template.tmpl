@@ -4,15 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-  "regexp"
 
   "github.com/pkg/errors"
 
 	"bou.ke/orm/rel"
 )
 
-// Databaser is a general interface for sql.Conn, sql.DB, and sql.Tx
-type Databaser interface {
+// DB is a general interface for sql.Conn, sql.DB, and sql.Tx
+type DB interface {
 	// ExecContext executes a query without returning any rows. The args are for any placeholder parameters in the query.
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 
@@ -25,16 +24,15 @@ type Databaser interface {
 
 var ErrNotFound error = errors.New("not found")
 
-var assignRe = regexp.MustCompile(`^(\w+)\s*=\s*\?$`)
-
 type Relation interface {
 	// Count ...
-	Count(ctx context.Context, db Databaser) (int64, error)
+	Count(ctx context.Context, db DB) (int64, error)
 
 	// DeleteAll ...
-	DeleteAll(ctx context.Context, db Databaser) (int64, error)
+	DeleteAll(ctx context.Context, db DB) (int64, error)
 
-  // TODO: UpdateAll(ctx context.Context, db Databaser, query string, args ...interface{}) error
+  // UpdateAll
+  UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error
 }
 
 {{range .Tables}}
@@ -59,12 +57,12 @@ func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
 }
 {{end}}
 {{$table := .}}{{range .BelongsTo}}
-func (o *{{$table.StructName}}) {{.StructName}}(ctx context.Context, db Databaser) (*{{.StructName}}, error) {
+func (o *{{$table.StructName}}) {{.StructName}}(ctx context.Context, db DB) (*{{.StructName}}, error) {
 	return {{.RelationName}}().Find(ctx, db, o.{{.StructName}}ID)
 }
 {{end}}
 
-func (o *{{.StructName}}) Save(ctx context.Context, db Databaser) error {
+func (o *{{.StructName}}) Save(ctx context.Context, db DB) error {
   if o.deleted {
     return fmt.Errorf("record deleted")
   }
@@ -128,7 +126,7 @@ func (o *{{.StructName}}) Save(ctx context.Context, db Databaser) error {
   return nil
 }
 
-func (o *{{.StructName}}) Delete(ctx context.Context, db Databaser) error {
+func (o *{{.StructName}}) Delete(ctx context.Context, db DB) error {
 	_, err := {{.RelationName}}().Where("id = ?", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
@@ -173,21 +171,21 @@ type {{.StructName}}Relation interface {
   Relation
 
   // All ...
-	All(ctx context.Context, db Databaser) ([]*{{.StructName}}, error)
+	All(ctx context.Context, db DB) ([]*{{.StructName}}, error)
 
-  // TODO: Create(ctx context.Context, db Databaser, query string, args ...interface{}) (*{{.StructName}}, error)
+  // TODO: Create(ctx context.Context, db DB, query string, args ...interface{}) (*{{.StructName}}, error)
 
   // Find ...
-	Find(ctx context.Context, db Databaser, id int64) (*{{.StructName}}, error)
+	Find(ctx context.Context, db DB, id int64) (*{{.StructName}}, error)
 
   // FindBy ...
-	FindBy(ctx context.Context, db Databaser, query string, args ...interface{}) (*{{.StructName}}, error)
+	FindBy(ctx context.Context, db DB, query string, args ...interface{}) (*{{.StructName}}, error)
 
   // First ...
-	First(ctx context.Context, db Databaser) (*{{.StructName}}, error)
+	First(ctx context.Context, db DB) (*{{.StructName}}, error)
 
   // Last ...
-	Last(ctx context.Context, db Databaser) (*{{.StructName}}, error)
+	Last(ctx context.Context, db DB) (*{{.StructName}}, error)
 
   // Limit ...
 	Limit(limit int64) {{.StructName}}Relation
@@ -205,7 +203,7 @@ type {{.StructName}}Relation interface {
 	Select(fields ...string) {{.StructName}}Relation
 
   // Take ...
-	Take(ctx context.Context, db Databaser) (*{{.StructName}}, error)
+	Take(ctx context.Context, db DB) (*{{.StructName}}, error)
 
   // Where ...
 	Where(query string, args ...interface{}) {{.StructName}}Relation
@@ -225,7 +223,7 @@ type {{.Singular}}Relation struct {
 	offset      int64
 }
 
-func {{.Singular}}FindBySQL(ctx context.Context, db Databaser, query string, args ...interface{}) ([]*{{.StructName}}, error) {
+func {{.Singular}}FindBySQL(ctx context.Context, db DB, query string, args ...interface{}) ([]*{{.StructName}}, error) {
 	var {{.Name}} []*{{.StructName}}
   rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -260,7 +258,24 @@ func {{.Singular}}FindBySQL(ctx context.Context, db Databaser, query string, arg
 	return {{.Name}}, rows.Err()
 }
 
-func (q *{{.Singular}}Relation) buildQuery() (query string, args []interface{}) {
+func (q *{{.Singular}}Relation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
+  clauses, err := rel.ParseAssignment(query, args...)
+  if err != nil {
+    return err
+  }
+
+  stmt := &rel.UpdateStatement{
+    Table:  {{.Name | printf "%q"}},
+		Wheres: q.whereClause,
+    Values: clauses,
+  }
+
+  query, values := stmt.Build()
+  _, err = db.ExecContext(ctx, query, values...)
+  return err
+}
+
+func (q *{{.Singular}}Relation) ToSQL() (query string, args []interface{}) {
 	fields := q.columnFields()
 	columns := make([]rel.Expr, 0, len(fields))
 	for _, field := range fields {
@@ -268,7 +283,7 @@ func (q *{{.Singular}}Relation) buildQuery() (query string, args []interface{}) 
 	}
 	s := rel.SelectStatement{
 		Columns: columns,
-		Table:   "{{.Name}}",
+		Table:   {{.Name | printf "%q"}},
 		Wheres:  q.whereClause,
 		Orders:  q.orderValues,
 		Limit:   q.limit,
@@ -277,17 +292,17 @@ func (q *{{.Singular}}Relation) buildQuery() (query string, args []interface{}) 
 	return s.Build()
 }
 
-func (q *{{.Singular}}Relation) Count(ctx context.Context, db Databaser) (int64, error) {
+func (q *{{.Singular}}Relation) Count(ctx context.Context, db DB) (int64, error) {
 	var count int64
   q.fields = []string{"COUNT(*)"}
 
-	query, args := q.buildQuery()
+	query, args := q.ToSQL()
 	err := db.QueryRowContext(ctx, query, args...).Scan(&count)
 
 	return count, err
 }
 
-func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context, db Databaser) (int64, error) {
+func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context, db DB) (int64, error) {
 	s := rel.DeleteStatement{
 		Table:   "{{.Name}}",
 		Wheres:  q.whereClause,
@@ -303,19 +318,14 @@ func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context, db Databaser) (in
 }
 
 func (q *{{.Singular}}Relation) Where(query string, args ...interface{}) {{.StructName}}Relation {
-  // TODO(bouk): only supports sketchy regexp parsing right now
-  match := assignRe.FindStringSubmatch(query)
+  clauses, err := rel.ParseAssignment(query, args...)
+
   // TODO(bouk): return error relation
-  if match == nil || len(args) != 1 {
-    panic("dunno what to do with this query: " + query)
+  if err != nil {
+    panic(err)
   }
 
-  q.whereClause = append(q.whereClause, &rel.Equality{
-    Field: match[1],
-    Expr: &rel.BindParam{
-      Value: args[0],
-    },
-  })
+  q.whereClause = append(q.whereClause, clauses...)
 
 	return q
 }
@@ -358,12 +368,12 @@ func (q *{{.Singular}}Relation) columnFields() []string {
 	}
 }
 
-func (q *{{.Singular}}Relation) All(ctx context.Context, db Databaser) ([]*{{.StructName}}, error) {
-  query, args := q.buildQuery()
+func (q *{{.Singular}}Relation) All(ctx context.Context, db DB) ([]*{{.StructName}}, error) {
+  query, args := q.ToSQL()
   return {{.Singular}}FindBySQL(ctx, db, query, args...)
 }
 
-func (q *{{.Singular}}Relation) Take(ctx context.Context, db Databaser) (*{{.StructName}}, error) {
+func (q *{{.Singular}}Relation) Take(ctx context.Context, db DB) (*{{.StructName}}, error) {
   q.limit = 1
   os, err := q.All(ctx, db)
   if err != nil {
@@ -377,19 +387,19 @@ func (q *{{.Singular}}Relation) Take(ctx context.Context, db Databaser) (*{{.Str
   return os[0], nil
 }
 
-func (q *{{.Singular}}Relation) Find(ctx context.Context, db Databaser, id int64) (*{{.StructName}}, error) {
+func (q *{{.Singular}}Relation) Find(ctx context.Context, db DB, id int64) (*{{.StructName}}, error) {
 	return q.FindBy(ctx, db, "id = ?", id)
 }
 
-func (q *{{.Singular}}Relation) FindBy(ctx context.Context, db Databaser, query string, args ...interface{}) (*{{.StructName}}, error) {
+func (q *{{.Singular}}Relation) FindBy(ctx context.Context, db DB, query string, args ...interface{}) (*{{.StructName}}, error) {
 	return q.Where(query, args...).Take(ctx, db)
 }
 
-func (q *{{.Singular}}Relation) First(ctx context.Context, db Databaser) (*{{.StructName}}, error) {
+func (q *{{.Singular}}Relation) First(ctx context.Context, db DB) (*{{.StructName}}, error) {
 	return q.Order("id ASC").Take(ctx, db)
 }
 
-func (q *{{.Singular}}Relation) Last(ctx context.Context, db Databaser) (*{{.StructName}}, error) {
+func (q *{{.Singular}}Relation) Last(ctx context.Context, db DB) (*{{.StructName}}, error) {
 	return q.Order("id DESC").Take(ctx, db)
 }
 
