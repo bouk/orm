@@ -57,7 +57,7 @@ type User struct {
 }
 
 func (o *User) Posts() PostRelation {
-	return Posts().Where("user_id = ?", o.ID)
+	return Posts.Where("user_id = ?", o.ID)
 }
 
 func (o *User) Save(ctx context.Context, db DB) error {
@@ -149,7 +149,7 @@ func (o *User) Save(ctx context.Context, db DB) error {
 }
 
 func (o *User) Delete(ctx context.Context, db DB) error {
-	_, err := Users().Where("id = ?", o.ID).DeleteAll(ctx, db)
+	_, err := Users.Where("id = ?", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -203,8 +203,6 @@ type UserRelation interface {
 	// All ...
 	All(ctx context.Context, db DB) ([]*User, error)
 
-	// TODO: Create(ctx context.Context, db DB, query string, args ...interface{}) (*User, error)
-
 	// Find ...
 	Find(ctx context.Context, db DB, id int64) (*User, error)
 
@@ -239,21 +237,74 @@ type UserRelation interface {
 	Where(query string, args ...interface{}) UserRelation
 }
 
-// Users returns a UserRelation, allowing you to build a query.
-// Note: the intermediate result of calls to the Relation can not be reused.
-func Users() UserRelation {
-	return &userRelation{}
+// UsersQuerying gives you access to Users
+type UsersQuerying struct{}
+
+// UsersQuerying gives you access to Users
+var Users UsersQuerying
+
+func (_ UsersQuerying) Count(ctx context.Context, db DB) (int64, error) {
+	return (&userRelation{}).Count(ctx, db)
 }
 
-type userRelation struct {
-	fields      []string
-	whereClause []rel.Expr
-	orderValues []rel.Expr
-	limit       int64
-	offset      int64
+func (_ UsersQuerying) DeleteAll(ctx context.Context, db DB) (int64, error) {
+	return (&userRelation{}).DeleteAll(ctx, db)
 }
 
-func userFindBySQL(ctx context.Context, db DB, query string, args ...interface{}) ([]*User, error) {
+func (_ UsersQuerying) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
+	return (&userRelation{}).UpdateAll(ctx, db, query, args...)
+}
+
+func (_ UsersQuerying) All(ctx context.Context, db DB) ([]*User, error) {
+	return (&userRelation{}).All(ctx, db)
+}
+
+func (_ UsersQuerying) Find(ctx context.Context, db DB, id int64) (*User, error) {
+	return (&userRelation{}).Find(ctx, db, id)
+}
+
+func (_ UsersQuerying) FindBy(ctx context.Context, db DB, query string, args ...interface{}) (*User, error) {
+	return (&userRelation{}).FindBy(ctx, db, query, args...)
+}
+
+func (_ UsersQuerying) First(ctx context.Context, db DB) (*User, error) {
+	return (&userRelation{}).First(ctx, db)
+}
+
+func (_ UsersQuerying) Last(ctx context.Context, db DB) (*User, error) {
+	return (&userRelation{}).Last(ctx, db)
+}
+
+func (_ UsersQuerying) Limit(limit int64) UserRelation {
+	return (&userRelation{}).Limit(limit)
+}
+
+func (_ UsersQuerying) New() *User {
+	return (&userRelation{}).New()
+}
+
+func (_ UsersQuerying) Offset(offset int64) UserRelation {
+	return (&userRelation{}).Offset(offset)
+}
+
+func (_ UsersQuerying) Order(query string, args ...string) UserRelation {
+	return (&userRelation{}).Order(query, args...)
+}
+
+func (_ UsersQuerying) Select(fields ...string) UserRelation {
+	return (&userRelation{}).Select(fields...)
+}
+
+func (_ UsersQuerying) Take(ctx context.Context, db DB) (*User, error) {
+	return (&userRelation{}).Take(ctx, db)
+}
+
+func (_ UsersQuerying) Where(query string, args ...interface{}) UserRelation {
+	return (&userRelation{}).Where(query, args...)
+}
+
+// FindBySQL returns all the Users selected by the given query
+func (_ UsersQuerying) FindBySQL(ctx context.Context, db DB, query string, args ...interface{}) ([]*User, error) {
 	var users []*User
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -286,6 +337,21 @@ func userFindBySQL(ctx context.Context, db DB, query string, args ...interface{}
 	}
 
 	return users, rows.Err()
+}
+
+// CountBySQL executes the given query, giving a count
+func (_ UsersQuerying) CountBySQL(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
+	var count int64
+	err := db.QueryRowContext(ctx, query, args...).Scan(&count)
+	return count, err
+}
+
+type userRelation struct {
+	fields      []string
+	whereClause []rel.Expr
+	orderValues []rel.Expr
+	limit       int64
+	offset      int64
 }
 
 func (q *userRelation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
@@ -323,13 +389,10 @@ func (q *userRelation) ToSQL() (query string, args []interface{}) {
 }
 
 func (q *userRelation) Count(ctx context.Context, db DB) (int64, error) {
-	var count int64
 	q.fields = []string{"COUNT(*)"}
 
 	query, args := q.ToSQL()
-	err := db.QueryRowContext(ctx, query, args...).Scan(&count)
-
-	return count, err
+	return Users.CountBySQL(ctx, db, query, args...)
 }
 
 func (q *userRelation) DeleteAll(ctx context.Context, db DB) (int64, error) {
@@ -404,7 +467,7 @@ func (q *userRelation) columnFields() []string {
 
 func (q *userRelation) All(ctx context.Context, db DB) ([]*User, error) {
 	query, args := q.ToSQL()
-	return userFindBySQL(ctx, db, query, args...)
+	return Users.FindBySQL(ctx, db, query, args...)
 }
 
 func (q *userRelation) Take(ctx context.Context, db DB) (*User, error) {
@@ -469,7 +532,7 @@ type Post struct {
 }
 
 func (o *Post) User(ctx context.Context, db DB) (*User, error) {
-	return Users().Find(ctx, db, o.UserID)
+	return Users.Find(ctx, db, o.UserID)
 }
 
 func (o *Post) Save(ctx context.Context, db DB) error {
@@ -561,7 +624,7 @@ func (o *Post) Save(ctx context.Context, db DB) error {
 }
 
 func (o *Post) Delete(ctx context.Context, db DB) error {
-	_, err := Posts().Where("id = ?", o.ID).DeleteAll(ctx, db)
+	_, err := Posts.Where("id = ?", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -615,8 +678,6 @@ type PostRelation interface {
 	// All ...
 	All(ctx context.Context, db DB) ([]*Post, error)
 
-	// TODO: Create(ctx context.Context, db DB, query string, args ...interface{}) (*Post, error)
-
 	// Find ...
 	Find(ctx context.Context, db DB, id int64) (*Post, error)
 
@@ -651,21 +712,74 @@ type PostRelation interface {
 	Where(query string, args ...interface{}) PostRelation
 }
 
-// Posts returns a PostRelation, allowing you to build a query.
-// Note: the intermediate result of calls to the Relation can not be reused.
-func Posts() PostRelation {
-	return &postRelation{}
+// PostsQuerying gives you access to Posts
+type PostsQuerying struct{}
+
+// PostsQuerying gives you access to Posts
+var Posts PostsQuerying
+
+func (_ PostsQuerying) Count(ctx context.Context, db DB) (int64, error) {
+	return (&postRelation{}).Count(ctx, db)
 }
 
-type postRelation struct {
-	fields      []string
-	whereClause []rel.Expr
-	orderValues []rel.Expr
-	limit       int64
-	offset      int64
+func (_ PostsQuerying) DeleteAll(ctx context.Context, db DB) (int64, error) {
+	return (&postRelation{}).DeleteAll(ctx, db)
 }
 
-func postFindBySQL(ctx context.Context, db DB, query string, args ...interface{}) ([]*Post, error) {
+func (_ PostsQuerying) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
+	return (&postRelation{}).UpdateAll(ctx, db, query, args...)
+}
+
+func (_ PostsQuerying) All(ctx context.Context, db DB) ([]*Post, error) {
+	return (&postRelation{}).All(ctx, db)
+}
+
+func (_ PostsQuerying) Find(ctx context.Context, db DB, id int64) (*Post, error) {
+	return (&postRelation{}).Find(ctx, db, id)
+}
+
+func (_ PostsQuerying) FindBy(ctx context.Context, db DB, query string, args ...interface{}) (*Post, error) {
+	return (&postRelation{}).FindBy(ctx, db, query, args...)
+}
+
+func (_ PostsQuerying) First(ctx context.Context, db DB) (*Post, error) {
+	return (&postRelation{}).First(ctx, db)
+}
+
+func (_ PostsQuerying) Last(ctx context.Context, db DB) (*Post, error) {
+	return (&postRelation{}).Last(ctx, db)
+}
+
+func (_ PostsQuerying) Limit(limit int64) PostRelation {
+	return (&postRelation{}).Limit(limit)
+}
+
+func (_ PostsQuerying) New() *Post {
+	return (&postRelation{}).New()
+}
+
+func (_ PostsQuerying) Offset(offset int64) PostRelation {
+	return (&postRelation{}).Offset(offset)
+}
+
+func (_ PostsQuerying) Order(query string, args ...string) PostRelation {
+	return (&postRelation{}).Order(query, args...)
+}
+
+func (_ PostsQuerying) Select(fields ...string) PostRelation {
+	return (&postRelation{}).Select(fields...)
+}
+
+func (_ PostsQuerying) Take(ctx context.Context, db DB) (*Post, error) {
+	return (&postRelation{}).Take(ctx, db)
+}
+
+func (_ PostsQuerying) Where(query string, args ...interface{}) PostRelation {
+	return (&postRelation{}).Where(query, args...)
+}
+
+// FindBySQL returns all the Posts selected by the given query
+func (_ PostsQuerying) FindBySQL(ctx context.Context, db DB, query string, args ...interface{}) ([]*Post, error) {
 	var posts []*Post
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -698,6 +812,21 @@ func postFindBySQL(ctx context.Context, db DB, query string, args ...interface{}
 	}
 
 	return posts, rows.Err()
+}
+
+// CountBySQL executes the given query, giving a count
+func (_ PostsQuerying) CountBySQL(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
+	var count int64
+	err := db.QueryRowContext(ctx, query, args...).Scan(&count)
+	return count, err
+}
+
+type postRelation struct {
+	fields      []string
+	whereClause []rel.Expr
+	orderValues []rel.Expr
+	limit       int64
+	offset      int64
 }
 
 func (q *postRelation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
@@ -735,13 +864,10 @@ func (q *postRelation) ToSQL() (query string, args []interface{}) {
 }
 
 func (q *postRelation) Count(ctx context.Context, db DB) (int64, error) {
-	var count int64
 	q.fields = []string{"COUNT(*)"}
 
 	query, args := q.ToSQL()
-	err := db.QueryRowContext(ctx, query, args...).Scan(&count)
-
-	return count, err
+	return Posts.CountBySQL(ctx, db, query, args...)
 }
 
 func (q *postRelation) DeleteAll(ctx context.Context, db DB) (int64, error) {
@@ -816,7 +942,7 @@ func (q *postRelation) columnFields() []string {
 
 func (q *postRelation) All(ctx context.Context, db DB) ([]*Post, error) {
 	query, args := q.ToSQL()
-	return postFindBySQL(ctx, db, query, args...)
+	return Posts.FindBySQL(ctx, db, query, args...)
 }
 
 func (q *postRelation) Take(ctx context.Context, db DB) (*Post, error) {
