@@ -367,7 +367,7 @@ func (q *{{.Singular}}Relation) Count(ctx context.Context, db DB) (int64, error)
 
 func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context, db DB) (int64, error) {
 	s := rel.DeleteStatement{
-		Table:   "{{.Name}}",
+		Table:   {{.Name | printf "%q"}},
 		Wheres:  q.whereClause,
 	}
 
@@ -426,7 +426,7 @@ func (q *{{.Singular}}Relation) Offset(offset int64) {{.StructName}}Relation {
 func (q *{{.Singular}}Relation) columnFields() []string {
 	if q.fields == nil {
 		return []string{ {{range .Columns}}
-			"{{.Name}}",{{end}}
+			{{.Name | printf "%q"}},{{end}}
 		}
 	} else {
 		return q.fields
