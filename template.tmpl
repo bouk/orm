@@ -71,17 +71,17 @@ func (o *{{.StructName}}) Save(ctx context.Context, db DB) error {
 		stmt := &rel.UpdateStatement{
 			Table: {{.Name | printf "%q"}},
 			Wheres: []rel.Expr{
-        &rel.Equality{
+        rel.Assignment{
           Field: "id",
-          Expr:  &rel.BindParam{Value: o.old.ID},
+          Value:  rel.BindParam{Value: o.old.ID},
         },
       },
 		}
 
 {{range .Columns}}
     if o.{{.FieldName}} != o.old.{{.FieldName}} {
-      stmt.Values = append(stmt.Values, &rel.Assignment{
-        Column: {{.Name | printf "%q"}},
+      stmt.Values = append(stmt.Values, rel.Assignment{
+        Field: {{.Name | printf "%q"}},
 				Value: &rel.BindParam{
           Value: o.{{.FieldName}},
 				},
@@ -325,7 +325,9 @@ func (q *{{.Singular}}Relation) Where(query string, args ...interface{}) {{.Stru
     panic(err)
   }
 
-  q.whereClause = append(q.whereClause, clauses...)
+  for _, clause := range clauses {
+    q.whereClause = append(q.whereClause, clause)
+  }
 
 	return q
 }
@@ -338,8 +340,8 @@ func (q *{{.Singular}}Relation) Limit(limit int64) {{.StructName}}Relation {
 func (q *{{.Singular}}Relation) New() *{{.StructName}} {
 	o := &{{.StructName}}{}
 	for _, w := range q.whereClause {
-		if eq, ok := w.(*rel.Equality); ok {
-			if bind, ok := eq.Expr.(*rel.BindParam); ok {
+		if eq, ok := w.(rel.Assignment); ok {
+			if bind, ok := eq.Value.(rel.BindParam); ok {
 				o.assignField(eq.Field, bind.Value)
       }
     }

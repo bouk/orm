@@ -2,7 +2,7 @@ package rel
 
 type UpdateStatement struct {
 	Table  string
-	Values []Expr
+	Values []Assignment
 	Wheres []Expr
 }
 

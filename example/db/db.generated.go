@@ -69,16 +69,16 @@ func (o *User) Save(ctx context.Context, db DB) error {
 		stmt := &rel.UpdateStatement{
 			Table: "users",
 			Wheres: []rel.Expr{
-				&rel.Equality{
+				rel.Assignment{
 					Field: "id",
-					Expr:  &rel.BindParam{Value: o.old.ID},
+					Value: rel.BindParam{Value: o.old.ID},
 				},
 			},
 		}
 
 		if o.ID != o.old.ID {
-			stmt.Values = append(stmt.Values, &rel.Assignment{
-				Column: "id",
+			stmt.Values = append(stmt.Values, rel.Assignment{
+				Field: "id",
 				Value: &rel.BindParam{
 					Value: o.ID,
 				},
@@ -86,8 +86,8 @@ func (o *User) Save(ctx context.Context, db DB) error {
 		}
 
 		if o.FirstName != o.old.FirstName {
-			stmt.Values = append(stmt.Values, &rel.Assignment{
-				Column: "first_name",
+			stmt.Values = append(stmt.Values, rel.Assignment{
+				Field: "first_name",
 				Value: &rel.BindParam{
 					Value: o.FirstName,
 				},
@@ -95,8 +95,8 @@ func (o *User) Save(ctx context.Context, db DB) error {
 		}
 
 		if o.LastName != o.old.LastName {
-			stmt.Values = append(stmt.Values, &rel.Assignment{
-				Column: "last_name",
+			stmt.Values = append(stmt.Values, rel.Assignment{
+				Field: "last_name",
 				Value: &rel.BindParam{
 					Value: o.LastName,
 				},
@@ -355,7 +355,9 @@ func (q *userRelation) Where(query string, args ...interface{}) UserRelation {
 		panic(err)
 	}
 
-	q.whereClause = append(q.whereClause, clauses...)
+	for _, clause := range clauses {
+		q.whereClause = append(q.whereClause, clause)
+	}
 
 	return q
 }
@@ -368,8 +370,8 @@ func (q *userRelation) Limit(limit int64) UserRelation {
 func (q *userRelation) New() *User {
 	o := &User{}
 	for _, w := range q.whereClause {
-		if eq, ok := w.(*rel.Equality); ok {
-			if bind, ok := eq.Expr.(*rel.BindParam); ok {
+		if eq, ok := w.(rel.Assignment); ok {
+			if bind, ok := eq.Value.(rel.BindParam); ok {
 				o.assignField(eq.Field, bind.Value)
 			}
 		}
@@ -479,16 +481,16 @@ func (o *Post) Save(ctx context.Context, db DB) error {
 		stmt := &rel.UpdateStatement{
 			Table: "posts",
 			Wheres: []rel.Expr{
-				&rel.Equality{
+				rel.Assignment{
 					Field: "id",
-					Expr:  &rel.BindParam{Value: o.old.ID},
+					Value: rel.BindParam{Value: o.old.ID},
 				},
 			},
 		}
 
 		if o.ID != o.old.ID {
-			stmt.Values = append(stmt.Values, &rel.Assignment{
-				Column: "id",
+			stmt.Values = append(stmt.Values, rel.Assignment{
+				Field: "id",
 				Value: &rel.BindParam{
 					Value: o.ID,
 				},
@@ -496,8 +498,8 @@ func (o *Post) Save(ctx context.Context, db DB) error {
 		}
 
 		if o.UserID != o.old.UserID {
-			stmt.Values = append(stmt.Values, &rel.Assignment{
-				Column: "user_id",
+			stmt.Values = append(stmt.Values, rel.Assignment{
+				Field: "user_id",
 				Value: &rel.BindParam{
 					Value: o.UserID,
 				},
@@ -505,8 +507,8 @@ func (o *Post) Save(ctx context.Context, db DB) error {
 		}
 
 		if o.Body != o.old.Body {
-			stmt.Values = append(stmt.Values, &rel.Assignment{
-				Column: "body",
+			stmt.Values = append(stmt.Values, rel.Assignment{
+				Field: "body",
 				Value: &rel.BindParam{
 					Value: o.Body,
 				},
@@ -765,7 +767,9 @@ func (q *postRelation) Where(query string, args ...interface{}) PostRelation {
 		panic(err)
 	}
 
-	q.whereClause = append(q.whereClause, clauses...)
+	for _, clause := range clauses {
+		q.whereClause = append(q.whereClause, clause)
+	}
 
 	return q
 }
@@ -778,8 +782,8 @@ func (q *postRelation) Limit(limit int64) PostRelation {
 func (q *postRelation) New() *Post {
 	o := &Post{}
 	for _, w := range q.whereClause {
-		if eq, ok := w.(*rel.Equality); ok {
-			if bind, ok := eq.Expr.(*rel.BindParam); ok {
+		if eq, ok := w.(rel.Assignment); ok {
+			if bind, ok := eq.Value.(rel.BindParam); ok {
 				o.assignField(eq.Field, bind.Value)
 			}
 		}

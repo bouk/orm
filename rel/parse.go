@@ -1,38 +1,39 @@
 package rel
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 )
 
 const assignment = `\s*(\w+)\s*=\s*\?\s*`
 
-var assignRe = regexp.MustCompile(`^` + assignment + `(?:,` + assignment + `)*$`)
+var assignRe = regexp.MustCompile(`(?:^|,)` + assignment)
 
 // ParseAssignment 'parses' an assignment expression. I'm so sorry
-func ParseAssignment(query string, args ...interface{}) ([]Expr, error) {
-	matches := assignRe.FindStringSubmatch(query)
+func ParseAssignment(query string, args ...interface{}) ([]Assignment, error) {
+	matches := assignRe.FindAllStringSubmatch(query, -1)
 	if len(matches) == 0 {
-		return nil, errors.New("failed to parse")
+		return nil, fmt.Errorf("failed to parse %q", query)
 	}
 
-	if matches[len(matches)-1] == "" {
-		matches = matches[:len(matches)-1]
+	if len(matches) != len(args) {
+		return nil, fmt.Errorf("%d arguments passed, %d expected", len(args), len(matches))
 	}
 
-	if len(matches)-1 != len(args) {
-		return nil, fmt.Errorf("%d arguments passed, %d expected", len(args), len(matches)-1)
-	}
-
-	exprs := make([]Expr, len(matches)-1)
-	for i, m := range matches[1:] {
-		exprs[i] = &Equality{
-			Field: m,
-			Expr: &BindParam{
+	var totalLength int
+	exprs := make([]Assignment, len(matches))
+	for i, m := range matches {
+		exprs[i] = Assignment{
+			Field: m[1],
+			Value: BindParam{
 				Value: args[i],
 			},
 		}
+		totalLength += len(m[0])
 	}
+	if totalLength != len(query) {
+		return nil, fmt.Errorf("failed to parse %q", query)
+	}
+
 	return exprs, nil
 }
