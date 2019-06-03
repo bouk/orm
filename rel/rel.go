@@ -22,6 +22,17 @@ func (b BindParam) writeTo(c *collector) {
 	c.values = append(c.values, b.Value)
 }
 
+type ExprList []Expr
+
+func (e ExprList) writeTo(c *collector) {
+	for i, expr := range e {
+		if i > 0 {
+			c.WriteString(", ")
+		}
+		expr.writeTo(c)
+	}
+}
+
 type Literal struct {
 	Text   string
 	Params []interface{}
