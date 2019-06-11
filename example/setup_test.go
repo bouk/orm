@@ -36,3 +36,8 @@ func TestMain(m *testing.M) {
 
 	os.Exit(m.Run())
 }
+
+func clear() {
+	d.Exec("DELETE FROM users")
+	d.Exec("DELETE FROM posts")
+}

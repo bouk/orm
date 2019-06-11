@@ -32,7 +32,7 @@ type Relation interface {
 	DeleteAll(ctx context.Context, db DB) (int64, error)
 
   // UpdateAll
-  UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error
+  UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error)
 }
 
 {{range .Tables}}
@@ -158,12 +158,14 @@ func (o *{{.StructName}}) pointersForFields(fields []string) ([]interface{}, err
 
 // assignField sets the field to the value.
 // It panics if the field doesn't exist or the value is the wrong type.
-func (o *{{.StructName}}) assignField(name string, value interface{}) {
+func (o *{{.StructName}}) assignField(name string, value interface{}) error {
 	switch name { {{range .Columns}}
 	case {{.Name | printf "%q"}}:
-		o.{{.FieldName}} = value.({{.Type}}){{end}}
+		o.{{.FieldName}} = value.({{.Type}})
+
+    return nil{{end}}
 	default:
-		panic("unknown field: " + name)
+		return errors.Errorf("unknown field: %s", name)
   }
 }
 
@@ -221,7 +223,7 @@ func (_ {{.RelationName}}Querying) DeleteAll(ctx context.Context, db DB) (int64,
   return (&{{.Singular}}Relation{}).DeleteAll(ctx, db)
 }
 
-func (_ {{.RelationName}}Querying) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
+func (_ {{.RelationName}}Querying) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
   return (&{{.Singular}}Relation{}).UpdateAll(ctx, db, query, args...)
 }
 
@@ -324,10 +326,10 @@ type {{.Singular}}Relation struct {
 	offset      int64
 }
 
-func (q *{{.Singular}}Relation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
+func (q *{{.Singular}}Relation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
   clauses, err := rel.ParseAssignment(query, args...)
   if err != nil {
-    return err
+    return 0, err
   }
 
   stmt := &rel.UpdateStatement{
@@ -337,8 +339,12 @@ func (q *{{.Singular}}Relation) UpdateAll(ctx context.Context, db DB, query stri
   }
 
   query, values := stmt.Build()
-  _, err = db.ExecContext(ctx, query, values...)
-  return err
+  res, err := db.ExecContext(ctx, query, values...)
+  if err != nil {
+    return 0, err
+  }
+
+  return res.RowsAffected()
 }
 
 func (q *{{.Singular}}Relation) ToSQL() (query string, args []interface{}) {
@@ -377,6 +383,7 @@ func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context, db DB) (int64, er
   if err != nil {
 		return 0, err
   }
+
   return res.RowsAffected()
 }
 

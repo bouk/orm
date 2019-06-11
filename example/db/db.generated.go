@@ -32,7 +32,7 @@ type Relation interface {
 	DeleteAll(ctx context.Context, db DB) (int64, error)
 
 	// UpdateAll
-	UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error
+	UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error)
 }
 
 type UserFields struct {
@@ -184,16 +184,22 @@ func (o *User) pointersForFields(fields []string) ([]interface{}, error) {
 
 // assignField sets the field to the value.
 // It panics if the field doesn't exist or the value is the wrong type.
-func (o *User) assignField(name string, value interface{}) {
+func (o *User) assignField(name string, value interface{}) error {
 	switch name {
 	case "id":
 		o.ID = value.(int64)
+
+		return nil
 	case "first_name":
 		o.FirstName = value.(string)
+
+		return nil
 	case "last_name":
 		o.LastName = value.(string)
+
+		return nil
 	default:
-		panic("unknown field: " + name)
+		return errors.Errorf("unknown field: %s", name)
 	}
 }
 
@@ -251,7 +257,7 @@ func (_ UsersQuerying) DeleteAll(ctx context.Context, db DB) (int64, error) {
 	return (&userRelation{}).DeleteAll(ctx, db)
 }
 
-func (_ UsersQuerying) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
+func (_ UsersQuerying) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
 	return (&userRelation{}).UpdateAll(ctx, db, query, args...)
 }
 
@@ -354,10 +360,10 @@ type userRelation struct {
 	offset      int64
 }
 
-func (q *userRelation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
+func (q *userRelation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
 	clauses, err := rel.ParseAssignment(query, args...)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	stmt := &rel.UpdateStatement{
@@ -367,8 +373,12 @@ func (q *userRelation) UpdateAll(ctx context.Context, db DB, query string, args 
 	}
 
 	query, values := stmt.Build()
-	_, err = db.ExecContext(ctx, query, values...)
-	return err
+	res, err := db.ExecContext(ctx, query, values...)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
 }
 
 func (q *userRelation) ToSQL() (query string, args []interface{}) {
@@ -407,6 +417,7 @@ func (q *userRelation) DeleteAll(ctx context.Context, db DB) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	return res.RowsAffected()
 }
 
@@ -657,16 +668,22 @@ func (o *Post) pointersForFields(fields []string) ([]interface{}, error) {
 
 // assignField sets the field to the value.
 // It panics if the field doesn't exist or the value is the wrong type.
-func (o *Post) assignField(name string, value interface{}) {
+func (o *Post) assignField(name string, value interface{}) error {
 	switch name {
 	case "id":
 		o.ID = value.(int64)
+
+		return nil
 	case "user_id":
 		o.UserID = value.(int64)
+
+		return nil
 	case "body":
 		o.Body = value.(string)
+
+		return nil
 	default:
-		panic("unknown field: " + name)
+		return errors.Errorf("unknown field: %s", name)
 	}
 }
 
@@ -724,7 +741,7 @@ func (_ PostsQuerying) DeleteAll(ctx context.Context, db DB) (int64, error) {
 	return (&postRelation{}).DeleteAll(ctx, db)
 }
 
-func (_ PostsQuerying) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
+func (_ PostsQuerying) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
 	return (&postRelation{}).UpdateAll(ctx, db, query, args...)
 }
 
@@ -827,10 +844,10 @@ type postRelation struct {
 	offset      int64
 }
 
-func (q *postRelation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) error {
+func (q *postRelation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
 	clauses, err := rel.ParseAssignment(query, args...)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	stmt := &rel.UpdateStatement{
@@ -840,8 +857,12 @@ func (q *postRelation) UpdateAll(ctx context.Context, db DB, query string, args 
 	}
 
 	query, values := stmt.Build()
-	_, err = db.ExecContext(ctx, query, values...)
-	return err
+	res, err := db.ExecContext(ctx, query, values...)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
 }
 
 func (q *postRelation) ToSQL() (query string, args []interface{}) {
@@ -880,6 +901,7 @@ func (q *postRelation) DeleteAll(ctx context.Context, db DB) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	return res.RowsAffected()
 }
 
