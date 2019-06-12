@@ -59,10 +59,118 @@ type User struct {
 		// LastName ...
 		LastName string
 	}
+
+	associations struct {
+		Posts struct {
+			loaded  bool
+			records []*Post
+		}
+	}
 }
 
-func (o *User) Posts() PostRelation {
+func (o *User) Posts() UserHasManyPostsCollection {
+	return (*userHasManyPostsCollection)(o)
+}
+
+type UserHasManyPostsCollection interface {
+	PostRelation
+
+	// Loaded specifies whether the association has been loaded
+	Loaded() bool
+
+	// Reset clears out the association
+	Reset()
+}
+
+type userHasManyPostsCollection User
+
+func (o *userHasManyPostsCollection) relation() PostRelation {
 	return Posts().WhereEq("user_id", o.ID)
+}
+
+func (o *userHasManyPostsCollection) Loaded() bool {
+	return o.associations.Posts.loaded
+}
+
+func (o *userHasManyPostsCollection) Reset() {
+	o.associations.Posts.records = nil
+	o.associations.Posts.loaded = false
+}
+
+func (o *userHasManyPostsCollection) Count(ctx context.Context, db DB) (int64, error) {
+	return o.relation().Count(ctx, db)
+}
+
+func (o *userHasManyPostsCollection) DeleteAll(ctx context.Context, db DB) (int64, error) {
+	return o.relation().DeleteAll(ctx, db)
+}
+
+func (o *userHasManyPostsCollection) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
+	return o.relation().UpdateAll(ctx, db, query, args...)
+}
+
+func (o *userHasManyPostsCollection) All(ctx context.Context, db DB) ([]*Post, error) {
+	if o.Loaded() {
+		return o.associations.Posts.records, nil
+	}
+
+	records, err := o.relation().All(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	o.associations.Posts.records = records
+	o.associations.Posts.loaded = true
+
+	return records, nil
+}
+
+func (o *userHasManyPostsCollection) Find(ctx context.Context, db DB, id int64) (*Post, error) {
+	return o.relation().Find(ctx, db, id)
+}
+
+func (o *userHasManyPostsCollection) FindBy(ctx context.Context, db DB, query string, args ...interface{}) (*Post, error) {
+	return o.relation().FindBy(ctx, db, query, args...)
+}
+
+func (o *userHasManyPostsCollection) First(ctx context.Context, db DB) (*Post, error) {
+	return o.relation().First(ctx, db)
+}
+
+func (o *userHasManyPostsCollection) Last(ctx context.Context, db DB) (*Post, error) {
+	return o.relation().Last(ctx, db)
+}
+
+func (o *userHasManyPostsCollection) Limit(limit int64) PostRelation {
+	return o.relation().Limit(limit)
+}
+
+func (o *userHasManyPostsCollection) New() *Post {
+	return o.relation().New()
+}
+
+func (o *userHasManyPostsCollection) Offset(offset int64) PostRelation {
+	return o.relation().Offset(offset)
+}
+
+func (o *userHasManyPostsCollection) Order(query string, args ...string) PostRelation {
+	return o.relation().Order(query, args...)
+}
+
+func (o *userHasManyPostsCollection) Select(fields ...string) PostRelation {
+	return o.relation().Select(fields...)
+}
+
+func (o *userHasManyPostsCollection) Take(ctx context.Context, db DB) (*Post, error) {
+	return o.relation().Take(ctx, db)
+}
+
+func (o *userHasManyPostsCollection) Where(value interface{}, args ...interface{}) PostRelation {
+	return o.relation().Where(value, args...)
+}
+
+func (o *userHasManyPostsCollection) WhereEq(field string, value interface{}) PostRelation {
+	return o.relation().WhereEq(field, value)
 }
 
 func (o *User) Save(ctx context.Context, db DB) error {
@@ -190,7 +298,7 @@ func (o *User) pointersForFields(fields []string) ([]interface{}, error) {
 }
 
 // assignField sets the field to the value.
-// It panics if the field doesn't exist or the value is the wrong type.
+// It returns an error if the field doesn't exist or the value is the wrong type.
 func (o *User) assignField(name string, value interface{}) error {
 	switch name {
 	case "id":
@@ -565,10 +673,29 @@ type Post struct {
 		// Body ...
 		Body string
 	}
+
+	associations struct {
+		Users struct {
+			loaded bool
+			record *User
+		}
+	}
 }
 
 func (o *Post) User(ctx context.Context, db DB) (*User, error) {
-	return Users().Find(ctx, db, o.UserID)
+	if o.associations.Users.loaded {
+		return o.associations.Users.record, nil
+	}
+
+	record, err := Users().Find(ctx, db, o.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	o.associations.Users.record = record
+	o.associations.Users.loaded = true
+
+	return record, nil
 }
 
 func (o *Post) Save(ctx context.Context, db DB) error {
@@ -696,7 +823,7 @@ func (o *Post) pointersForFields(fields []string) ([]interface{}, error) {
 }
 
 // assignField sets the field to the value.
-// It panics if the field doesn't exist or the value is the wrong type.
+// It returns an error if the field doesn't exist or the value is the wrong type.
 func (o *Post) assignField(name string, value interface{}) error {
 	switch name {
 	case "id":

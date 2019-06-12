@@ -149,6 +149,58 @@ func TestFindBySQL(t *testing.T) {
 	}
 }
 
+func TestHasManyAssociationIsCached(t *testing.T) {
+	defer clear()
+
+	u := db.Users().New()
+	err := u.Save(ctx, d)
+	require.NoError(t, err)
+
+	p := u.Posts().New()
+	err = p.Save(ctx, d)
+	require.NoError(t, err)
+
+	posts, err := u.Posts().All(ctx, d)
+	require.NoError(t, err)
+	require.Len(t, posts, 1)
+	require.True(t, u.Posts().Loaded())
+
+	n, err := db.Posts().DeleteAll(ctx, d)
+	require.EqualValues(t, 1, n)
+	require.NoError(t, err)
+
+	posts, err = u.Posts().All(ctx, d)
+	require.NoError(t, err)
+	require.Len(t, posts, 1)
+	require.True(t, u.Posts().Loaded())
+
+	u.Posts().Reset()
+	require.False(t, u.Posts().Loaded())
+
+	posts, err = u.Posts().All(ctx, d)
+	require.NoError(t, err)
+	require.Empty(t, posts)
+	require.True(t, u.Posts().Loaded())
+}
+
+func TestBelongsToAssociationIsCached(t *testing.T) {
+	defer clear()
+
+	u := createUser(t)
+	p := db.Post{UserID: u.ID}
+	u2, err := p.User(ctx, d)
+	require.NoError(t, err)
+	require.Equal(t, u2, u)
+
+	n, err := db.Users().DeleteAll(ctx, d)
+	require.EqualValues(t, 1, n)
+	require.NoError(t, err)
+
+	u2, err = p.User(ctx, d)
+	require.NoError(t, err)
+	require.Equal(t, u2, u)
+}
+
 func createUser(t *testing.T) *db.User {
 	u := db.Users().New()
 	err := u.Save(ctx, d)

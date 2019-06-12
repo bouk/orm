@@ -50,15 +50,144 @@ type {{.StructName}} struct { {{range .Columns}}
     {{.FieldName}} {{.Type}}
 {{end}}
   }
+
+  associations struct { {{$table := .}}{{range .HasMany}}
+    {{.RelationName}} struct {
+      loaded bool
+      records []*{{.StructName}}
+    }
+{{end}}
+  {{range .BelongsTo}}
+    {{.RelationName}} struct {
+      loaded bool
+      record *{{.StructName}}
+    }
+{{end}}
+  }
 }
-{{$table := .}}{{range .HasMany}}
-func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
+{{$table := .}}
+{{range .HasMany}}
+func (o *{{$table.StructName}}) {{.RelationName}}() {{$table.StructName}}HasMany{{.RelationName}}Collection {
+  return (*{{$table.Singular}}HasMany{{.RelationName}}Collection)(o)
+}
+
+type {{$table.StructName}}HasMany{{.RelationName}}Collection interface {
+  {{.StructName}}Relation
+
+  // Loaded specifies whether the association has been loaded
+  Loaded() bool
+
+  // Reset clears out the association
+  Reset()
+}
+
+type {{$table.Singular}}HasMany{{.RelationName}}Collection {{$table.StructName}}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) relation() {{.StructName}}Relation {
 	return {{.RelationName}}().WhereEq("{{$table.Singular}}_id", o.ID)
 }
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Loaded() bool {
+  return o.associations.{{.RelationName}}.loaded
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Reset() {
+  o.associations.{{.RelationName}}.records = nil
+  o.associations.{{.RelationName}}.loaded = false
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Count(ctx context.Context, db DB) (int64, error) {
+  return o.relation().Count(ctx, db)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) DeleteAll(ctx context.Context, db DB) (int64, error) {
+  return o.relation().DeleteAll(ctx, db)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
+  return o.relation().UpdateAll(ctx, db, query, args...)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) All(ctx context.Context, db DB) ([]*{{.StructName}}, error) {
+  if o.Loaded() {
+    return o.associations.{{.RelationName}}.records, nil
+  }
+
+  records, err := o.relation().All(ctx, db)
+  if err != nil {
+    return nil, err
+  }
+
+  o.associations.{{.RelationName}}.records = records
+  o.associations.{{.RelationName}}.loaded = true
+
+  return records, nil
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Find(ctx context.Context, db DB, id int64) (*{{.StructName}}, error) {
+  return o.relation().Find(ctx, db, id)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) FindBy(ctx context.Context, db DB, query string, args ...interface{}) (*{{.StructName}}, error) {
+  return o.relation().FindBy(ctx, db, query, args...)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) First(ctx context.Context, db DB) (*{{.StructName}}, error) {
+  return o.relation().First(ctx, db)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Last(ctx context.Context, db DB) (*{{.StructName}}, error) {
+  return o.relation().Last(ctx, db)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Limit(limit int64) {{.StructName}}Relation {
+  return o.relation().Limit(limit)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) New() *{{.StructName}} {
+  return o.relation().New()
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Offset(offset int64) {{.StructName}}Relation {
+  return o.relation().Offset(offset)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Order(query string, args ...string) {{.StructName}}Relation {
+  return o.relation().Order(query, args...)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Select(fields ...string) {{.StructName}}Relation {
+  return o.relation().Select(fields...)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Take(ctx context.Context, db DB) (*{{.StructName}}, error) {
+  return o.relation().Take(ctx, db)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) Where(value interface{}, args ...interface{}) {{.StructName}}Relation {
+  return o.relation().Where(value, args...)
+}
+
+func (o *{{$table.Singular}}HasMany{{.RelationName}}Collection) WhereEq(field string, value interface{}) {{.StructName}}Relation {
+  return o.relation().WhereEq(field, value)
+}
 {{end}}
-{{$table := .}}{{range .BelongsTo}}
+
+{{range .BelongsTo}}
 func (o *{{$table.StructName}}) {{.StructName}}(ctx context.Context, db DB) (*{{.StructName}}, error) {
-	return {{.RelationName}}().Find(ctx, db, o.{{.StructName}}ID)
+  if o.associations.{{.RelationName}}.loaded {
+    return o.associations.{{.RelationName}}.record, nil
+  }
+
+	record, err := {{.RelationName}}().Find(ctx, db, o.{{.StructName}}ID)
+  if err != nil {
+    return nil, err
+  }
+
+  o.associations.{{.RelationName}}.record = record
+  o.associations.{{.RelationName}}.loaded = true
+
+  return record, nil
 }
 {{end}}
 
