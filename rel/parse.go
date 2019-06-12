@@ -34,7 +34,7 @@ func ParseAssignment(query string, args ...interface{}) ([]Assignment, error) {
 					Value: value,
 				},
 			}
-		case "IN":
+		default:
 			return nil, fmt.Errorf("failed to parse %q", query)
 		}
 		totalLength += len(m[0])
@@ -48,6 +48,10 @@ func ParseAssignment(query string, args ...interface{}) ([]Assignment, error) {
 
 // ParseWhere 'parses' a where expression. I'm so sorry
 func ParseWhere(query string, args ...interface{}) ([]Expr, error) {
+	if len(args) == 0 {
+		return []Expr{Literal{Text: query}}, nil
+	}
+
 	matches := assignRe.FindAllStringSubmatch(query, -1)
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("failed to parse %q", query)

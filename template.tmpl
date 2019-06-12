@@ -53,12 +53,12 @@ type {{.StructName}} struct {
 }
 {{$table := .}}{{range .HasMany}}
 func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
-	return {{.RelationName}}.Where("{{$table.Singular}}_id = ?", o.ID)
+	return {{.RelationName}}().Where("{{$table.Singular}}_id = ?", o.ID)
 }
 {{end}}
 {{$table := .}}{{range .BelongsTo}}
 func (o *{{$table.StructName}}) {{.StructName}}(ctx context.Context, db DB) (*{{.StructName}}, error) {
-	return {{.RelationName}}.Find(ctx, db, o.{{.StructName}}ID)
+	return {{.RelationName}}().Find(ctx, db, o.{{.StructName}}ID)
 }
 {{end}}
 
@@ -127,7 +127,7 @@ func (o *{{.StructName}}) Save(ctx context.Context, db DB) error {
 }
 
 func (o *{{.StructName}}) Delete(ctx context.Context, db DB) error {
-	_, err := {{.RelationName}}.Where("id = ?", o.ID).DeleteAll(ctx, db)
+	_, err := {{.RelationName}}().Where("id = ?", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,9 @@ type {{.StructName}}Relation interface {
 type {{.RelationName}}Querying struct{}
 
 // {{.RelationName}}Querying gives you access to {{.RelationName}}
-var {{.RelationName}} {{.RelationName}}Querying
+func {{.RelationName}}() {{.RelationName}}Querying {
+  return {{.RelationName}}Querying{}
+}
 
 func (_ {{.RelationName}}Querying) Count(ctx context.Context, db DB) (int64, error) {
   return (&{{.Singular}}Relation{}).Count(ctx, db)
@@ -368,7 +370,7 @@ func (q *{{.Singular}}Relation) Count(ctx context.Context, db DB) (int64, error)
   q.fields = []string{"COUNT(*)"}
 
 	query, args := q.ToSQL()
-  return {{.RelationName}}.CountBySQL(ctx, db, query, args...)
+  return {{.RelationName}}().CountBySQL(ctx, db, query, args...)
 }
 
 func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context, db DB) (int64, error) {
@@ -440,7 +442,7 @@ func (q *{{.Singular}}Relation) columnFields() []string {
 
 func (q *{{.Singular}}Relation) All(ctx context.Context, db DB) ([]*{{.StructName}}, error) {
   query, args := q.ToSQL()
-  return {{.RelationName}}.FindBySQL(ctx, db, query, args...)
+  return {{.RelationName}}().FindBySQL(ctx, db, query, args...)
 }
 
 func (q *{{.Singular}}Relation) Take(ctx context.Context, db DB) (*{{.StructName}}, error) {

@@ -92,6 +92,15 @@ func TestParseWhere(t *testing.T) {
 			args:  []interface{}{1},
 			err:   errors.New("expected arg 0 to be slice, got int"),
 		},
+		{
+			name:  "literal WHERE",
+			query: "a IS NOT NULL",
+			exprs: []Expr{
+				Literal{
+					Text: "a IS NOT NULL",
+				},
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			exprs, err := ParseWhere(tt.query, tt.args...)

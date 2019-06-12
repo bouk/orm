@@ -11,6 +11,21 @@ func (a Assignment) writeTo(c *collector) {
 	a.Value.writeTo(c)
 }
 
+type Equality struct {
+	Field Field
+	Value Expr
+}
+
+func (a Equality) writeTo(c *collector) {
+	a.Field.writeTo(c)
+	if a.Value == nil {
+		c.WriteString(" IS NULL")
+	} else {
+		c.WriteString(" = ")
+		a.Value.writeTo(c)
+	}
+}
+
 type Field struct {
 	Name string
 }

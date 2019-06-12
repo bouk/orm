@@ -57,7 +57,7 @@ type User struct {
 }
 
 func (o *User) Posts() PostRelation {
-	return Posts.Where("user_id = ?", o.ID)
+	return Posts().Where("user_id = ?", o.ID)
 }
 
 func (o *User) Save(ctx context.Context, db DB) error {
@@ -149,7 +149,7 @@ func (o *User) Save(ctx context.Context, db DB) error {
 }
 
 func (o *User) Delete(ctx context.Context, db DB) error {
-	_, err := Users.Where("id = ?", o.ID).DeleteAll(ctx, db)
+	_, err := Users().Where("id = ?", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -247,7 +247,9 @@ type UserRelation interface {
 type UsersQuerying struct{}
 
 // UsersQuerying gives you access to Users
-var Users UsersQuerying
+func Users() UsersQuerying {
+	return UsersQuerying{}
+}
 
 func (_ UsersQuerying) Count(ctx context.Context, db DB) (int64, error) {
 	return (&userRelation{}).Count(ctx, db)
@@ -402,7 +404,7 @@ func (q *userRelation) Count(ctx context.Context, db DB) (int64, error) {
 	q.fields = []string{"COUNT(*)"}
 
 	query, args := q.ToSQL()
-	return Users.CountBySQL(ctx, db, query, args...)
+	return Users().CountBySQL(ctx, db, query, args...)
 }
 
 func (q *userRelation) DeleteAll(ctx context.Context, db DB) (int64, error) {
@@ -476,7 +478,7 @@ func (q *userRelation) columnFields() []string {
 
 func (q *userRelation) All(ctx context.Context, db DB) ([]*User, error) {
 	query, args := q.ToSQL()
-	return Users.FindBySQL(ctx, db, query, args...)
+	return Users().FindBySQL(ctx, db, query, args...)
 }
 
 func (q *userRelation) Take(ctx context.Context, db DB) (*User, error) {
@@ -541,7 +543,7 @@ type Post struct {
 }
 
 func (o *Post) User(ctx context.Context, db DB) (*User, error) {
-	return Users.Find(ctx, db, o.UserID)
+	return Users().Find(ctx, db, o.UserID)
 }
 
 func (o *Post) Save(ctx context.Context, db DB) error {
@@ -633,7 +635,7 @@ func (o *Post) Save(ctx context.Context, db DB) error {
 }
 
 func (o *Post) Delete(ctx context.Context, db DB) error {
-	_, err := Posts.Where("id = ?", o.ID).DeleteAll(ctx, db)
+	_, err := Posts().Where("id = ?", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -731,7 +733,9 @@ type PostRelation interface {
 type PostsQuerying struct{}
 
 // PostsQuerying gives you access to Posts
-var Posts PostsQuerying
+func Posts() PostsQuerying {
+	return PostsQuerying{}
+}
 
 func (_ PostsQuerying) Count(ctx context.Context, db DB) (int64, error) {
 	return (&postRelation{}).Count(ctx, db)
@@ -886,7 +890,7 @@ func (q *postRelation) Count(ctx context.Context, db DB) (int64, error) {
 	q.fields = []string{"COUNT(*)"}
 
 	query, args := q.ToSQL()
-	return Posts.CountBySQL(ctx, db, query, args...)
+	return Posts().CountBySQL(ctx, db, query, args...)
 }
 
 func (q *postRelation) DeleteAll(ctx context.Context, db DB) (int64, error) {
@@ -960,7 +964,7 @@ func (q *postRelation) columnFields() []string {
 
 func (q *postRelation) All(ctx context.Context, db DB) ([]*Post, error) {
 	query, args := q.ToSQL()
-	return Posts.FindBySQL(ctx, db, query, args...)
+	return Posts().FindBySQL(ctx, db, query, args...)
 }
 
 func (q *postRelation) Take(ctx context.Context, db DB) (*Post, error) {
