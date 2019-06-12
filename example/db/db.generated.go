@@ -57,7 +57,7 @@ type User struct {
 }
 
 func (o *User) Posts() PostRelation {
-	return Posts().Where("user_id = ?", o.ID)
+	return Posts().WhereEq("user_id", o.ID)
 }
 
 func (o *User) Save(ctx context.Context, db DB) error {
@@ -149,7 +149,7 @@ func (o *User) Save(ctx context.Context, db DB) error {
 }
 
 func (o *User) Delete(ctx context.Context, db DB) error {
-	_, err := Users().Where("id = ?", o.ID).DeleteAll(ctx, db)
+	_, err := Users().WhereEq("id", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,10 @@ type UserRelation interface {
 	Take(ctx context.Context, db DB) (*User, error)
 
 	// Where ...
-	Where(query string, args ...interface{}) UserRelation
+	Where(value interface{}, args ...interface{}) UserRelation
+
+	// WhereEq ...
+	WhereEq(field string, value interface{}) UserRelation
 }
 
 // UsersQuerying gives you access to Users
@@ -307,8 +310,12 @@ func (_ UsersQuerying) Take(ctx context.Context, db DB) (*User, error) {
 	return (&userRelation{}).Take(ctx, db)
 }
 
-func (_ UsersQuerying) Where(query string, args ...interface{}) UserRelation {
-	return (&userRelation{}).Where(query, args...)
+func (_ UsersQuerying) Where(value interface{}, args ...interface{}) UserRelation {
+	return (&userRelation{}).Where(value, args...)
+}
+
+func (_ UsersQuerying) WhereEq(field string, value interface{}) UserRelation {
+	return (&userRelation{}).WhereEq(field, value)
 }
 
 // FindBySQL returns all the Users selected by the given query
@@ -363,10 +370,7 @@ type userRelation struct {
 }
 
 func (q *userRelation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
-	clauses, err := rel.ParseAssignment(query, args...)
-	if err != nil {
-		return 0, err
-	}
+	clauses := []rel.Expr{rel.Literal{Text: query, Params: args}}
 
 	stmt := &rel.UpdateStatement{
 		Table:  "users",
@@ -423,15 +427,22 @@ func (q *userRelation) DeleteAll(ctx context.Context, db DB) (int64, error) {
 	return res.RowsAffected()
 }
 
-func (q *userRelation) Where(query string, args ...interface{}) UserRelation {
-	clauses, err := rel.ParseWhere(query, args...)
-
-	// TODO(bouk): return error relation
+func (q *userRelation) Where(value interface{}, args ...interface{}) UserRelation {
+	clauses, err := rel.UnpackWhere(value, args...)
 	if err != nil {
 		panic(err)
 	}
 
 	q.whereClause = append(q.whereClause, clauses...)
+
+	return q
+}
+
+func (q *userRelation) WhereEq(field string, value interface{}) UserRelation {
+	q.whereClause = append(q.whereClause, rel.Equality{
+		Field: rel.Field{field},
+		Value: rel.BindParam{value},
+	})
 
 	return q
 }
@@ -444,7 +455,7 @@ func (q *userRelation) Limit(limit int64) UserRelation {
 func (q *userRelation) New() *User {
 	o := &User{}
 	for _, w := range q.whereClause {
-		if eq, ok := w.(rel.Assignment); ok {
+		if eq, ok := w.(rel.Equality); ok {
 			if bind, ok := eq.Value.(rel.BindParam); ok {
 				o.assignField(eq.Field.Name, bind.Value)
 			}
@@ -635,7 +646,7 @@ func (o *Post) Save(ctx context.Context, db DB) error {
 }
 
 func (o *Post) Delete(ctx context.Context, db DB) error {
-	_, err := Posts().Where("id = ?", o.ID).DeleteAll(ctx, db)
+	_, err := Posts().WhereEq("id", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -726,7 +737,10 @@ type PostRelation interface {
 	Take(ctx context.Context, db DB) (*Post, error)
 
 	// Where ...
-	Where(query string, args ...interface{}) PostRelation
+	Where(value interface{}, args ...interface{}) PostRelation
+
+	// WhereEq ...
+	WhereEq(field string, value interface{}) PostRelation
 }
 
 // PostsQuerying gives you access to Posts
@@ -793,8 +807,12 @@ func (_ PostsQuerying) Take(ctx context.Context, db DB) (*Post, error) {
 	return (&postRelation{}).Take(ctx, db)
 }
 
-func (_ PostsQuerying) Where(query string, args ...interface{}) PostRelation {
-	return (&postRelation{}).Where(query, args...)
+func (_ PostsQuerying) Where(value interface{}, args ...interface{}) PostRelation {
+	return (&postRelation{}).Where(value, args...)
+}
+
+func (_ PostsQuerying) WhereEq(field string, value interface{}) PostRelation {
+	return (&postRelation{}).WhereEq(field, value)
 }
 
 // FindBySQL returns all the Posts selected by the given query
@@ -849,10 +867,7 @@ type postRelation struct {
 }
 
 func (q *postRelation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
-	clauses, err := rel.ParseAssignment(query, args...)
-	if err != nil {
-		return 0, err
-	}
+	clauses := []rel.Expr{rel.Literal{Text: query, Params: args}}
 
 	stmt := &rel.UpdateStatement{
 		Table:  "posts",
@@ -909,15 +924,22 @@ func (q *postRelation) DeleteAll(ctx context.Context, db DB) (int64, error) {
 	return res.RowsAffected()
 }
 
-func (q *postRelation) Where(query string, args ...interface{}) PostRelation {
-	clauses, err := rel.ParseWhere(query, args...)
-
-	// TODO(bouk): return error relation
+func (q *postRelation) Where(value interface{}, args ...interface{}) PostRelation {
+	clauses, err := rel.UnpackWhere(value, args...)
 	if err != nil {
 		panic(err)
 	}
 
 	q.whereClause = append(q.whereClause, clauses...)
+
+	return q
+}
+
+func (q *postRelation) WhereEq(field string, value interface{}) PostRelation {
+	q.whereClause = append(q.whereClause, rel.Equality{
+		Field: rel.Field{field},
+		Value: rel.BindParam{value},
+	})
 
 	return q
 }
@@ -930,7 +952,7 @@ func (q *postRelation) Limit(limit int64) PostRelation {
 func (q *postRelation) New() *Post {
 	o := &Post{}
 	for _, w := range q.whereClause {
-		if eq, ok := w.(rel.Assignment); ok {
+		if eq, ok := w.(rel.Equality); ok {
 			if bind, ok := eq.Value.(rel.BindParam); ok {
 				o.assignField(eq.Field.Name, bind.Value)
 			}

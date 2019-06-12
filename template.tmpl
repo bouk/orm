@@ -53,7 +53,7 @@ type {{.StructName}} struct {
 }
 {{$table := .}}{{range .HasMany}}
 func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
-	return {{.RelationName}}().Where("{{$table.Singular}}_id = ?", o.ID)
+	return {{.RelationName}}().WhereEq("{{$table.Singular}}_id", o.ID)
 }
 {{end}}
 {{$table := .}}{{range .BelongsTo}}
@@ -127,7 +127,7 @@ func (o *{{.StructName}}) Save(ctx context.Context, db DB) error {
 }
 
 func (o *{{.StructName}}) Delete(ctx context.Context, db DB) error {
-	_, err := {{.RelationName}}().Where("id = ?", o.ID).DeleteAll(ctx, db)
+	_, err := {{.RelationName}}().WhereEq("id", o.ID).DeleteAll(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,10 @@ type {{.StructName}}Relation interface {
 	Take(ctx context.Context, db DB) (*{{.StructName}}, error)
 
   // Where ...
-	Where(query string, args ...interface{}) {{.StructName}}Relation
+	Where(value interface{}, args ...interface{}) {{.StructName}}Relation
+
+  // WhereEq ...
+	WhereEq(field string, value interface{}) {{.StructName}}Relation
 }
 
 // {{.RelationName}}Querying gives you access to {{.RelationName}}
@@ -273,8 +276,12 @@ func (_ {{.RelationName}}Querying) Take(ctx context.Context, db DB) (*{{.StructN
   return (&{{.Singular}}Relation{}).Take(ctx, db)
 }
 
-func (_ {{.RelationName}}Querying) Where(query string, args ...interface{}) {{.StructName}}Relation {
-  return (&{{.Singular}}Relation{}).Where(query, args...)
+func (_ {{.RelationName}}Querying) Where(value interface{}, args ...interface{}) {{.StructName}}Relation {
+  return (&{{.Singular}}Relation{}).Where(value, args...)
+}
+
+func (_ {{.RelationName}}Querying) WhereEq(field string, value interface{}) {{.StructName}}Relation {
+  return (&{{.Singular}}Relation{}).WhereEq(field, value)
 }
 
 // FindBySQL returns all the {{.RelationName}} selected by the given query
@@ -329,10 +336,7 @@ type {{.Singular}}Relation struct {
 }
 
 func (q *{{.Singular}}Relation) UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error) {
-  clauses, err := rel.ParseAssignment(query, args...)
-  if err != nil {
-    return 0, err
-  }
+  clauses := []rel.Expr{rel.Literal{Text: query, Params: args}}
 
   stmt := &rel.UpdateStatement{
     Table:  {{.Name | printf "%q"}},
@@ -389,15 +393,22 @@ func (q *{{.Singular}}Relation) DeleteAll(ctx context.Context, db DB) (int64, er
   return res.RowsAffected()
 }
 
-func (q *{{.Singular}}Relation) Where(query string, args ...interface{}) {{.StructName}}Relation {
-  clauses, err := rel.ParseWhere(query, args...)
-
-  // TODO(bouk): return error relation
+func (q *{{.Singular}}Relation) Where(value interface{}, args ...interface{}) {{.StructName}}Relation {
+  clauses, err := rel.UnpackWhere(value, args...)
   if err != nil {
     panic(err)
   }
 
   q.whereClause = append(q.whereClause, clauses...)
+
+	return q
+}
+
+func (q *{{.Singular}}Relation) WhereEq(field string, value interface{}) {{.StructName}}Relation {
+  q.whereClause = append(q.whereClause, rel.Equality{
+    Field: rel.Field{field},
+    Value: rel.BindParam{value},
+  })
 
 	return q
 }
@@ -410,7 +421,7 @@ func (q *{{.Singular}}Relation) Limit(limit int64) {{.StructName}}Relation {
 func (q *{{.Singular}}Relation) New() *{{.StructName}} {
 	o := &{{.StructName}}{}
 	for _, w := range q.whereClause {
-		if eq, ok := w.(rel.Assignment); ok {
+		if eq, ok := w.(rel.Equality); ok {
 			if bind, ok := eq.Value.(rel.BindParam); ok {
 				o.assignField(eq.Field.Name, bind.Value)
       }

@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"bou.ke/orm/example/db"
+	"bou.ke/orm/rel"
 )
 
 var _ db.UserRelation = db.Users()
@@ -23,7 +24,22 @@ func TestCreateUser(t *testing.T) {
 }
 
 func TestWhereScope(t *testing.T) {
-	u := db.Users().Where("first_name = ?, last_name = ?, whatever = ?", "Bouke", "Tables", "dont-exist").New()
+	db.Users().WhereEq("first_name", "Whatever")
+
+	u := db.Users().Where(map[string]string{"first_name": "Bouke"}).New()
+	require.Equal(t, "Bouke", u.FirstName)
+
+	db.Users().Where("first_name IS NOT NULL")
+	db.Users().Where("first_name = ?", "Bouke")
+	db.Users().Where(rel.In{
+		Left: rel.Field{"first_name"},
+		Right: []rel.Expr{
+			rel.BindParam{"Bouke"},
+			rel.BindParam{"COOL"},
+		},
+	})
+
+	u = db.Users().WhereEq("first_name", "Bouke").WhereEq("last_name", "Tables").New()
 	require.Equal(t, "Bouke", u.FirstName)
 	require.Equal(t, "Tables", u.LastName)
 }
