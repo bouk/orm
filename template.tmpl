@@ -36,20 +36,20 @@ type Relation interface {
 }
 
 {{range .Tables}}
-type {{.StructName}}Fields struct { {{range .Columns}}
-	// {{.FieldName}} ...
-	{{.FieldName}} {{.Type}}
+type {{.StructName}} struct { {{range .Columns}}
+  // {{.FieldName}} ...
+  {{.FieldName}} {{.Type}}
 {{end}}
-}
-
-type {{.StructName}} struct {
-	{{.StructName}}Fields
 
   // If true, then this record exists in the DB
   persisted bool
   deleted   bool
 
-  old {{.StructName}}Fields
+  old struct { {{range .Columns}}
+    // {{.FieldName}} ...
+    {{.FieldName}} {{.Type}}
+{{end}}
+  }
 }
 {{$table := .}}{{range .HasMany}}
 func (o *{{$table.StructName}}) {{.RelationName}}() {{.StructName}}Relation {
@@ -121,7 +121,8 @@ func (o *{{.StructName}}) Save(ctx context.Context, db DB) error {
     }
 	}
 
-  o.old = o.{{.StructName}}Fields
+  {{range .Columns}}
+  o.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
 
   return nil
 }
@@ -157,7 +158,7 @@ func (o *{{.StructName}}) pointersForFields(fields []string) ([]interface{}, err
 }
 
 // assignField sets the field to the value.
-// It panics if the field doesn't exist or the value is the wrong type.
+// It returns an error if the field doesn't exist or the value is the wrong type.
 func (o *{{.StructName}}) assignField(name string, value interface{}) error {
 	switch name { {{range .Columns}}
 	case {{.Name | printf "%q"}}:
@@ -312,7 +313,8 @@ func (_ {{.RelationName}}Querying) FindBySQL(ctx context.Context, db DB, query s
 		o := &{{.StructName}}{}
 		*o = *row
 
-    o.old = o.{{.StructName}}Fields
+    {{range .Columns}}
+    o.old.{{.FieldName}} = o.{{.FieldName}}{{end}}
 
 		{{.Name}} = append({{.Name}}, o)
 	}

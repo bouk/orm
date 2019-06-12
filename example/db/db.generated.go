@@ -35,7 +35,7 @@ type Relation interface {
 	UpdateAll(ctx context.Context, db DB, query string, args ...interface{}) (int64, error)
 }
 
-type UserFields struct {
+type User struct {
 	// ID ...
 	ID int64
 
@@ -44,16 +44,21 @@ type UserFields struct {
 
 	// LastName ...
 	LastName string
-}
-
-type User struct {
-	UserFields
 
 	// If true, then this record exists in the DB
 	persisted bool
 	deleted   bool
 
-	old UserFields
+	old struct {
+		// ID ...
+		ID int64
+
+		// FirstName ...
+		FirstName string
+
+		// LastName ...
+		LastName string
+	}
 }
 
 func (o *User) Posts() PostRelation {
@@ -143,7 +148,9 @@ func (o *User) Save(ctx context.Context, db DB) error {
 		}
 	}
 
-	o.old = o.UserFields
+	o.old.ID = o.ID
+	o.old.FirstName = o.FirstName
+	o.old.LastName = o.LastName
 
 	return nil
 }
@@ -346,7 +353,9 @@ func (_ UsersQuerying) FindBySQL(ctx context.Context, db DB, query string, args 
 		o := &User{}
 		*o = *row
 
-		o.old = o.UserFields
+		o.old.ID = o.ID
+		o.old.FirstName = o.FirstName
+		o.old.LastName = o.LastName
 
 		users = append(users, o)
 	}
@@ -532,7 +541,7 @@ func (q *userRelation) Order(query string, args ...string) UserRelation {
 	return q
 }
 
-type PostFields struct {
+type Post struct {
 	// ID ...
 	ID int64
 
@@ -541,16 +550,21 @@ type PostFields struct {
 
 	// Body ...
 	Body string
-}
-
-type Post struct {
-	PostFields
 
 	// If true, then this record exists in the DB
 	persisted bool
 	deleted   bool
 
-	old PostFields
+	old struct {
+		// ID ...
+		ID int64
+
+		// UserID ...
+		UserID int64
+
+		// Body ...
+		Body string
+	}
 }
 
 func (o *Post) User(ctx context.Context, db DB) (*User, error) {
@@ -640,7 +654,9 @@ func (o *Post) Save(ctx context.Context, db DB) error {
 		}
 	}
 
-	o.old = o.PostFields
+	o.old.ID = o.ID
+	o.old.UserID = o.UserID
+	o.old.Body = o.Body
 
 	return nil
 }
@@ -843,7 +859,9 @@ func (_ PostsQuerying) FindBySQL(ctx context.Context, db DB, query string, args 
 		o := &Post{}
 		*o = *row
 
-		o.old = o.PostFields
+		o.old.ID = o.ID
+		o.old.UserID = o.UserID
+		o.old.Body = o.Body
 
 		posts = append(posts, o)
 	}
